@@ -1,0 +1,31 @@
+fields:
+  od:
+    aliases:
+      - "OD"
+      - "OD (in)"
+      - "Outside Diameter"
+
+  wt:
+    aliases:
+      - "Weight / WT"
+      - "Weight / WT (lb/ft)"
+      - "WT"
+      - "Weight"
+
+  grade:
+    aliases:
+      - "Grade"
+
+  drift_option:
+    aliases:
+      - "Drift Option"
+      - "Drift Type"
+
+  material_family:
+    aliases:
+      - "Material Family"
+
+  yield_strength:
+    aliases:
+      - "Yield Strength"
+      - "Yield Strength (ksi)"

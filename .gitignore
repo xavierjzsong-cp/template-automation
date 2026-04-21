@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs / outputs
+logs/
+output_docs/
+
+# Excel temp
+~$*.xlsx
+
+# Local config secrets
+.env
+
+# Test / temp docs
+input_docs/

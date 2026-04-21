@@ -1,0 +1,83 @@
+partners:
+  VAM:
+    display_name: "VAM"
+    company_name: "Vallourec"
+    adapter: "vam_adapter"
+    enabled: true
+
+    urls:
+      homepage: "https://www.vamservices.com"
+      connection_datasheet: "https://www.vamservices.com/product/configurator"
+      blanking_dimensions: "https://www.vamservices.com/product/configurator;blanking=true"
+    
+    hardcoded_request:
+      filters:
+        OD (in): "3-1/2"
+        Weight / WT (lb/ft): "9.20"
+        Grade: "C90"
+        Drift Option: "API Drift"
+
+      connection: "VAM 21"
+      result_index: 0
+
+    capabilities:
+      supports_connection_datasheet: true
+      supports_blanking_dimensions: true
+      requires_login: false
+
+    notes: "Primary V1 automation target."
+
+  TSH:
+    display_name: "TSH (TenarisHydril)"
+    company_name: "Tenaris"
+    adapter: "tenaris_adapter"
+    enabled: true
+
+    urls:
+      homepage: "https://dcp.tenaris.com/en"
+      connection_datasheet: "https://dcp.tenaris.com/Product_Datasheet"
+      blanking_dimensions: "https://dcp.tenaris.com/BlankingDimensions"
+
+    capabilities:
+      supports_configurator: false
+      supports_connection_datasheet: true
+      supports_blanking_dimensions: true
+      requires_login: false
+
+    notes: "May need separate handling for Tenaris DCP flows."
+
+  JFE:
+    display_name: "JFE"
+    company_name: "JFE Steel"
+    adapter: "jfe_adapter"
+    enabled: true
+
+    urls:
+      homepage: "https://www.jfetools.com/datasheet_generator"
+      connection_datasheet: "https://www.jfetools.com/datasheet_generator"
+      blanking_dimensions: null
+
+    capabilities:
+      supports_configurator: false
+      supports_connection_datasheet: true
+      supports_blanking_dimensions: false
+      requires_login: false
+
+    notes: "Datasheet generator entry point."
+
+  SLHT:
+    display_name: "SLHT (Seal-Lock)"
+    company_name: "Hunting PLC"
+    adapter: "hunting_adapter"
+    enabled: true
+
+    urls:
+      homepage: "https://huntingplc.com/products-services/connection-technology-octg/seal-lock-ht/"
+      connection_datasheet: null
+      blanking_dimensions: null
+
+    capabilities:
+      supports_configurator: false
+      supports_connection_datasheet: true
+      supports_blanking_dimensions: false
+      requires_login: false
