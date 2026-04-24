@@ -16,15 +16,15 @@ class TemplateWriter:
     def write(
         self,
         parsed: dict[str, Any],
-        top_adapter_data: dict[str, Any] | None,
-        bottom_adapter_data: dict[str, Any] | None,
+        top_adapter: dict[str, Any] | None,
+        bottom_adapter: dict[str, Any] | None,
         template_path: str | Path,
         output_dir: str | Path = "output_docs",
     ) -> dict[str, Any]:
         formatted = self._build_template_fields(
             parsed=parsed,
-            top_adapter_data=top_adapter_data,
-            bottom_adapter_data=bottom_adapter_data,
+            top_adapter=top_adapter,
+            bottom_adapter=bottom_adapter,
         )
 
         print("\n=== Formatted Data ===")
@@ -47,8 +47,8 @@ class TemplateWriter:
     def _build_template_fields(
         self,
         parsed: dict[str, Any],
-        top_adapter_data: dict[str, Any] | None,
-        bottom_adapter_data: dict[str, Any] | None,
+        top_adapter: dict[str, Any] | None,
+        bottom_adapter: dict[str, Any] | None,
     ) -> dict[str, Any]:
         connections = parsed.get("connections") or {}
         upper = connections.get("upper") or {}
@@ -87,11 +87,11 @@ class TemplateWriter:
             "overall_length": self._format_overall_length(parsed.get("overall_length")),
             "top_thread": {
                 "thread": top_thread_text,
-                **(top_adapter_data or {}),
+                **(top_adapter or {}),
             },
             "bottom_thread": {
                 "thread": bottom_thread_text,
-                **(bottom_adapter_data or {}),
+                **(bottom_adapter or {}),
             },
         }
 

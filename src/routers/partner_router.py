@@ -6,8 +6,8 @@ from typing import Any
 class PartnerRouter:
 
     # routing
-    def route(self, document_result: dict[str, Any]) -> dict[str, Any]:
-        connections = document_result.get("connections") or {}
+    def route(self, parsed: dict[str, Any]) -> dict[str, Any]:
+        connections = parsed.get("connections") or {}
 
         targets: list[dict[str, Any]] = []
 
@@ -25,8 +25,8 @@ class PartnerRouter:
         partners_involved = self._collect_partners(targets)
 
         shared_data = {
-            "product_material_grade": document_result.get("product_material_grade"),
-            "overall_length": document_result.get("overall_length"),
+            "product_material_grade": parsed.get("product_material_grade"),
+            "overall_length": parsed.get("overall_length"),
         }
 
         return {

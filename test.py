@@ -7,10 +7,13 @@ from src.document_parser import DocumentParser
 from src.routers.partner_router import PartnerRouter
 from src.mappers.vam_mapper import VamMapper
 from src.site_adapters.vam_adapter import VamAdapter
+from src.mappers.tsh_mapper import TshMapper
+from src.site_adapters.tsh_adapter import TshAdapter
 from src.writers.template_writer import TemplateWriter
 
 
-
+# 测试整个流程
+"""
 def main() -> None:
     project_root = Path(__file__).resolve().parent
 
@@ -28,6 +31,7 @@ def main() -> None:
     # 当前先只准备 VAM mapper
     mapper_registry = {
         "VAM": VamMapper(),
+        "TSH": TshMapper(),
     }
 
     parsed = parser.parse_docs(input_path)
@@ -41,8 +45,8 @@ def main() -> None:
     print("\n=== Routing Result ===")
     print(routing_result)
 
-    top_adapter_data = None
-    bottom_adapter_data = None
+    top_adapter = None
+    bottom_adapter = None
 
     for target in routing_result.get("targets", []):
         partner = (target.get("partner") or "").upper()
@@ -53,13 +57,13 @@ def main() -> None:
             print(f"Skipping target because no mapper is registered for partner: {partner}")
             continue
 
-        mapped_data = mapper.build_mapped_data(
+        mapped_result = mapper.build_mapped_data(
             target=target,
             shared_data=routing_result.get("shared_data"),
         )
 
-        print(f"\n=== Mapped Data ({partner} / {side}) ===")
-        print(mapped_data)
+        print(f"\n=== Mapped Result ({partner} / {side}) ===")
+        print(mapped_result)
 
         if partner == "VAM":
             partner_cfg = get_partner_config(partners_config, "VAM")
@@ -83,7 +87,7 @@ def main() -> None:
             )
 
             try:
-                adapter_result = adapter.run(mapped_data)
+                adapter_result = adapter.run(mapped_result)
             finally:
                 adapter.close()
 
@@ -91,20 +95,18 @@ def main() -> None:
             print(adapter_result)
 
             if side == "upper":
-                top_adapter_data = adapter_result
+                top_adapter = adapter_result
             elif side == "lower":
-                bottom_adapter_data = adapter_result
+                bottom_adapter = adapter_result
 
     write_result = writer.write(
         parsed=parsed,
-        top_adapter_data=top_adapter_data,
-        bottom_adapter_data=bottom_adapter_data,
+        top_adapter=top_adapter,
+        bottom_adapter=bottom_adapter,
         template_path=template_path,
         output_dir=output_dir,
     )
-
-    # print("\n=== Writer Result ===")
-    # print(write_result)
+"""
 
 
 if __name__ == "__main__":

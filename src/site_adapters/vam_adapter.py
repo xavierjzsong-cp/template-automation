@@ -43,7 +43,7 @@ class VamAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "vam_adapter_v2.0.0")
+        self.logger = setup_logger(self.logs_dir, "vam_adapter")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
