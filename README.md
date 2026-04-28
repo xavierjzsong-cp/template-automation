@@ -12,3 +12,4 @@ writer：执行自动化写入template的操作
 3. template_writer 中 write（Top_thread相关单元格）和format操作需要完善 - pending
 4. partner_router - 如果overall length > 18，还需要获取Drift size（要求 < ID(min)）
 5. vam_mapper 还有字段（MF、Grade）匹配逻辑没有实现，等待list - pending
+6. tsh_mapper - Grade 字段目前是 hardcode

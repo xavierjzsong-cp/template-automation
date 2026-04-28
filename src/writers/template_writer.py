@@ -200,6 +200,24 @@ class TemplateWriter:
         if not dimension:
             return None
 
+        if "min" in dimension and "max" in dimension:
+            return self._format_min_max_dimension(dimension)
+
+        if "nominal" in dimension and "tol_1" in dimension and "tol_2" in dimension:
+            return self._format_nominal_tolerance_dimension(dimension)
+
+        return None
+
+    def _format_min_max_dimension(self, dimension: dict[str, Any]) -> str | None:
+        min_value = dimension.get("min")
+        max_value = dimension.get("max")
+
+        if not min_value or not max_value:
+            return None
+
+        return f"{max_value} / {min_value}"
+
+    def _format_nominal_tolerance_dimension(self, dimension: dict[str, Any]) -> str | None:
         nominal = dimension.get("nominal")
         tol_1 = dimension.get("tol_1")
         tol_2 = dimension.get("tol_2")
