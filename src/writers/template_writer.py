@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
 
@@ -266,6 +267,152 @@ class TemplateWriter:
             return "+." + text[3:]
         return text
 
+    def _get_thread_dimension_max(self, dimension: dict[str, Any] | None) -> Decimal | None:
+        if not dimension:
+            return None
+
+        if "min" in dimension and "max" in dimension:
+            return self._to_decimal(dimension.get("max"))
+
+        if "nominal" in dimension and "tol_1" in dimension and "tol_2" in dimension:
+            nominal = self._to_decimal(dimension.get("nominal"))
+            tol_1 = self._to_decimal(dimension.get("tol_1"))
+            tol_2 = self._to_decimal(dimension.get("tol_2"))
+
+            if nominal is None or tol_1 is None or tol_2 is None:
+                return None
+
+            return nominal + max(tol_1, tol_2)
+
+        return None
+
+    def _get_thread_dimension_min(self, dimension: dict[str, Any] | None) -> Decimal | None:
+        if not dimension:
+            return None
+
+        if "min" in dimension and "max" in dimension:
+            return self._to_decimal(dimension.get("min"))
+
+        if "nominal" in dimension and "tol_1" in dimension and "tol_2" in dimension:
+            nominal = self._to_decimal(dimension.get("nominal"))
+            tol_1 = self._to_decimal(dimension.get("tol_1"))
+            tol_2 = self._to_decimal(dimension.get("tol_2"))
+
+            if nominal is None or tol_1 is None or tol_2 is None:
+                return None
+
+            return nominal + min(tol_1, tol_2)
+
+        return None
+
+    def _get_overall_od_max(self, formatted: dict[str, Any]) -> str | None:
+        top_thread = formatted.get("top_thread") or {}
+        bottom_thread = formatted.get("bottom_thread") or {}
+
+        candidates = [
+            self._get_thread_dimension_max(top_thread.get("od")),
+            self._get_thread_dimension_max(bottom_thread.get("od")),
+        ]
+
+        candidates = [value for value in candidates if value is not None]
+        if not candidates:
+            return None
+
+        return self._format_decimal(max(candidates))
+
+    def _get_overall_id_min(self, formatted: dict[str, Any]) -> str | None:
+        top_thread = formatted.get("top_thread") or {}
+        bottom_thread = formatted.get("bottom_thread") or {}
+
+        candidates = [
+            self._get_thread_dimension_min(top_thread.get("id")),
+            self._get_thread_dimension_min(bottom_thread.get("id")),
+        ]
+
+        candidates = [value for value in candidates if value is not None]
+        if not candidates:
+            return None
+
+        return self._format_decimal(min(candidates))
+
+    def _get_min_thread_metric(
+        self,
+        formatted: dict[str, Any],
+        metric_name: str,
+        suffix_k: bool = False,
+    ) -> str | None:
+        top_thread = formatted.get("top_thread") or {}
+        bottom_thread = formatted.get("bottom_thread") or {}
+
+        candidates: list[Decimal] = []
+
+        top_value = self._extract_decimal_from_value(top_thread.get(metric_name))
+        bottom_value = self._extract_decimal_from_value(bottom_thread.get(metric_name))
+
+        if top_value is not None:
+            candidates.append(top_value)
+        if bottom_value is not None:
+            candidates.append(bottom_value)
+
+        if not candidates:
+            return None
+
+        min_value = min(candidates)
+
+        if suffix_k:
+            return f"{self._format_metric_number(min_value)}K"
+
+        return self._format_metric_number(min_value, use_comma=True)
+
+    def _extract_decimal_from_value(self, value: Any) -> Decimal | None:
+        if value is None:
+            return None
+
+        text = str(value).strip()
+        if not text:
+            return None
+
+        match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", text)
+        if not match:
+            return None
+
+        return self._to_decimal(match.group(0))
+
+    def _format_metric_number(self, value: Decimal, use_comma: bool = False) -> str:
+        if value == value.to_integral_value():
+            integer_value = int(value)
+            if use_comma:
+                return f"{integer_value:,}"
+            return str(integer_value)
+
+        normalized = value.normalize()
+        text = format(normalized, "f")
+
+        if use_comma:
+            integer_part, _, decimal_part = text.partition(".")
+            integer_part = f"{int(integer_part):,}"
+            return f"{integer_part}.{decimal_part}" if decimal_part else integer_part
+
+        return text
+
+    def _to_decimal(self, value: Any) -> Decimal | None:
+        if value is None:
+            return None
+
+        text = str(value).strip().replace(",", "")
+        if not text:
+            return None
+
+        try:
+            return Decimal(text)
+        except InvalidOperation:
+            return None
+
+    def _format_decimal(self, value: Decimal) -> str:
+        value = value.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+        return f"{value:.3f}"
+
+    # Template writing
     def _write_to_template(
         self,
         template_path: str | Path,
@@ -293,7 +440,60 @@ class TemplateWriter:
         self._write_if_editable(sheet, "B34", formatted.get("qcp"))
         self._write_if_editable(sheet, "H9", formatted.get("overall_length"))
 
-        self._write_if_editable(sheet, "B15", self._get_max_overall_length(formatted.get("overall_length")))
+        # Overall length max
+        self._write_if_editable(
+            sheet,
+            "B15",
+            self._get_max_overall_length(formatted.get("overall_length")),
+        )
+
+        # Top thread
+        self._write_if_editable(
+            sheet,
+            "H13",
+            self._format_thread_dimension((formatted.get("top_thread") or {}).get("od")),
+        )
+        self._write_if_editable(
+            sheet,
+            "H14",
+            self._format_thread_dimension((formatted.get("top_thread") or {}).get("id")),
+        )
+
+        # Product overall OD max / ID min
+        self._write_if_editable(
+            sheet,
+            "B13",
+            self._get_overall_od_max(formatted),
+        )
+        self._write_if_editable(
+            sheet,
+            "B14",
+            self._get_overall_id_min(formatted),
+        )
+
+        # Thread performance min values
+        self._write_if_editable(
+            sheet,
+            "B22",
+            self._get_min_thread_metric(formatted, "tensile", suffix_k=True),
+        )
+        self._write_if_editable(
+            sheet,
+            "B23",
+            self._get_min_thread_metric(formatted, "compression", suffix_k=True),
+        )
+        self._write_if_editable(
+            sheet,
+            "B24",
+            self._get_min_thread_metric(formatted, "burst", suffix_k=False),
+        )
+        self._write_if_editable(
+            sheet,
+            "B25",
+            self._get_min_thread_metric(formatted, "collapse", suffix_k=False),
+        )
+
+        # Bottom thread
         self._write_if_editable(
             sheet,
             "H22",

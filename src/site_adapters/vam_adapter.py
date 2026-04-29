@@ -43,7 +43,7 @@ class VamAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "vam_adapter")
+        self.logger = setup_logger(self.logs_dir, "vam_adapter_v2.1")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
@@ -583,10 +583,10 @@ class VamAdapter(BaseAdapter):
         self._wait_for_loader_to_disappear(cds_page, timeout=15000)
 
         if connection_type == "BOX":
-            patterns = [r"\bBOX\b", r"\bBED\b", r"\bBID\b", r"\bin\.\b"]
+            patterns = [r"\bBOX\b", r"\bBED\b", r"\bBID\b", r"\bMBEL\b", r"\bMBIL\b", r"\bin\.\b"]
             label = "blanking_box"
         elif connection_type == "PIN":
-            patterns = [r"\bPIN\b", r"\bPED\b", r"\bPID\b", r"\bin\.\b"]
+            patterns = [r"\bPIN\b", r"\bPED\b", r"\bPID\b", r"\bMPEL\b", r"\bMPIL\b", r"\bin\.\b"]
             label = "blanking_pin"
         else:
             raise RuntimeError(f"Unsupported connection type for blanking wait: {connection_type}")
@@ -618,9 +618,8 @@ class VamAdapter(BaseAdapter):
         )
 
         return {
-            #"family": "VAM",
-            **(joint_performances),
-            **(blanking_dimensions),
+            **joint_performances,
+            **blanking_dimensions,
         }
 
     def _extract_joint_performances(self, cds_page: Page) -> dict[str, str | None]:
@@ -715,6 +714,8 @@ class VamAdapter(BaseAdapter):
             return {
                 "od": self._extract_dimension_triplet(section_text, "BED"),
                 "id": self._extract_dimension_triplet(section_text, "BID"),
+                "external_length": self._extract_min_length_value(section_text, "MBEL"),
+                "internal_length": self._extract_min_length_value(section_text, "MBIL"),
             }
 
         if connection_type == "PIN":
@@ -726,6 +727,8 @@ class VamAdapter(BaseAdapter):
             return {
                 "od": self._extract_dimension_triplet(section_text, "PED"),
                 "id": self._extract_dimension_triplet(section_text, "PID"),
+                "external_length": self._extract_min_length_value(section_text, "MPEL"),
+                "internal_length": self._extract_min_length_value(section_text, "MPIL"),
             }
 
         raise RuntimeError(f"Unsupported connection type for blanking extraction: {connection_type}")
@@ -767,6 +770,21 @@ class VamAdapter(BaseAdapter):
             "tol_1": match.group(2),
             "tol_2": match.group(3),
         }
+
+    def _extract_min_length_value(self, section_text: str, label: str) -> str | None:
+        normalized = self._normalize_text_for_parsing(section_text)
+
+        pattern = (
+            rf"{re.escape(label)}\s+"
+            rf"(?:min\.\s*)?"
+            rf"([+\-]?\d+(?:,\d{{3}})*(?:\.\d+)?)\s*in\."
+        )
+
+        match = re.search(pattern, normalized, flags=re.IGNORECASE)
+        if not match:
+            raise RuntimeError(f"Could not extract blanking length for label [{label}] from text: {normalized}")
+
+        return match.group(1)
 
     def _extract_first_number(self, text: str) -> str | None:
         match = re.search(r"([+\-]?\d+(?:,\d{3})*(?:\.\d+)?)", text)

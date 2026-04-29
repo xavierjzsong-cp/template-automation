@@ -7,9 +7,9 @@ writer：执行自动化写入template的操作
 
 
 进度：
-1. template_writer 中还有比较逻辑（写入哪个 worksheet、OD(max)、ID(min)、B22-B25） - pending
-2. pots_doc_parser - coating也可以从pots doc中提取 - pending
-3. template_writer 中 write（Top_thread相关单元格）和format操作需要完善 - pending
-4. partner_router - 如果overall length > 18，还需要获取Drift size（要求 < ID(min)）
-5. vam_mapper 还有字段（MF、Grade）匹配逻辑没有实现，等待list - pending
+1. template_writer 中还有比较逻辑（写入哪个 worksheet）、write（thread的length、coating相关）和format操作需要完善
+2. pots_doc_parser - coating 也可以从 pots doc 中提取
+3. tsh_adapter - 还需要添加 EL & IL 的抓取逻辑
+4. partner_router - 如果 overall length > 18，还需要获取 Drift size（要求 < ID(min)）
+5. vam_mapper 还有字段（MF、Grade）匹配逻辑没有实现，等待 list
 6. tsh_mapper - Grade 字段目前是 hardcode
