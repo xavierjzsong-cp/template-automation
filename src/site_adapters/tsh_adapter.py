@@ -37,7 +37,7 @@ class TshAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "tsh_adapter_v1.4")
+        self.logger = setup_logger(self.logs_dir, "tsh_adapter_v1.5")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
@@ -65,6 +65,8 @@ class TshAdapter(BaseAdapter):
         grade = connection.get("grade")
         connection_name = connection.get("name")
         connection_type = (connection.get("type") or "").upper()
+
+        drift_extraction = bool(mapped_data.get("drift_extraction"))
 
         if not od or not weight or not grade or not connection_name:
             raise ValueError(
@@ -97,9 +99,16 @@ class TshAdapter(BaseAdapter):
 
         blanking_result = self._extract_blanking_dimensions(connection_type)
 
+        drift_data: dict[str, Any] = {}
+        if drift_extraction:
+            drift_data = {
+                "drift": self._extract_selected_product_drift()
+            }
+
         return {
             **datasheet_result,
             **blanking_result,
+            **drift_data,
         }
 
     def open_datasheet_page(self) -> None:
@@ -242,6 +251,7 @@ class TshAdapter(BaseAdapter):
                 f"Could not find TSH dropdown option. "
                 f"dropdown_index={dropdown_index}, search_text=[{search_text}], "
                 f"target_value=[{target_value}], match_mode=[{match_mode}], "
+                f"visible_options={visible_options}, hidden_options={hidden_options}"
             )
 
         option.scroll_into_view_if_needed()
@@ -468,10 +478,6 @@ class TshAdapter(BaseAdapter):
         return None
 
     def _score_weight_option_datasheet(self, option_text: str, target_weight: str) -> int | None:
-        """
-        Datasheet example:
-        0.254 (9.20, 9.30)
-        """
         target_num = self._safe_float(target_weight)
 
         if target_num is None:
@@ -493,10 +499,6 @@ class TshAdapter(BaseAdapter):
         return None
 
     def _score_weight_option_blanking(self, option_text: str, target_weight: str) -> int | None:
-        """
-        Blanking example:
-        0.254(9.2)
-        """
         target_num = self._safe_float(target_weight)
 
         if target_num is None:
@@ -703,6 +705,27 @@ class TshAdapter(BaseAdapter):
                 "max": inside_max,
             },
         }
+
+    def _extract_selected_product_drift(self) -> str | None:
+        body_text = self.page.locator("body").inner_text(timeout=5000)
+        normalized = self._normalize_text(body_text)
+
+        selected_product_section = self._extract_section(
+            text=normalized,
+            start_label="Selected Product",
+            end_candidates=["Box", "Pin"],
+        )
+
+        pattern = r"Drift\s*\(in\)\s+([+\-]?\d+(?:,\d{3})*(?:\.\d+)?)"
+        match = re.search(pattern, selected_product_section, flags=re.IGNORECASE)
+
+        if match:
+            return match.group(1)
+
+        raise RuntimeError(
+            f"Could not extract TSH Drift from Selected Product section: "
+            f"{selected_product_section[:500]}"
+        )
 
     def _extract_section(
         self,

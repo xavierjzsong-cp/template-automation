@@ -43,7 +43,7 @@ class VamAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "vam_adapter_v2.1")
+        self.logger = setup_logger(self.logs_dir, "vam_adapter_v2.2")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
@@ -99,7 +99,7 @@ class VamAdapter(BaseAdapter):
             "Weight / WT (lb/ft)": connection.get("weight"),
             # "Material Family": connection.get("material_family"),
             "Yield Strength (ksi)": connection.get("yield_strength"),
-            # "Grade" 暂不考虑,
+            # "Grade" 暂不考虑
             "Drift Option": self.DEFAULT_DRIFT_OPTION,
         }
 
@@ -607,6 +607,14 @@ class VamAdapter(BaseAdapter):
         connection = mapped_data.get("connection") or {}
         connection_type = (connection.get("type") or "").upper()
 
+        drift_extraction = bool(mapped_data.get("drift_extraction"))
+
+        drift_size: dict[str, Any] = {}
+        if drift_extraction:
+            drift_size = {
+                "drift": self._extract_drift_from_pipe_body_properties(cds_page)
+            }
+        
         joint_performances = self._extract_joint_performances(cds_page)
 
         self._open_blanking_dimensions_tab(cds_page)
@@ -620,6 +628,7 @@ class VamAdapter(BaseAdapter):
         return {
             **joint_performances,
             **blanking_dimensions,
+            **drift_size,
         }
 
     def _extract_joint_performances(self, cds_page: Page) -> dict[str, str | None]:
@@ -678,6 +687,49 @@ class VamAdapter(BaseAdapter):
                 pairs, "External Pressure Resistance"
             ),
         }
+
+    def _extract_drift_from_pipe_body_properties(self, cds_page: Page) -> str | None:
+        rows = cds_page.locator("[data-cy^='cds-card-data']")
+
+        try:
+            row_count = rows.count()
+        except Exception:
+            row_count = 0
+
+        for idx in range(row_count):
+            try:
+                row = rows.nth(idx)
+
+                label_locator = row.locator("[data-cy^='cds-card-label']").first
+                value_cast_locator = row.locator("[data-cy^='cds-card-value-cast']").first
+                unit_locator = row.locator("[data-cy^='cds-card-unit']").first
+
+                if label_locator.count() == 0 or value_cast_locator.count() == 0:
+                    continue
+
+                label = label_locator.inner_text(timeout=2000).strip()
+                value = value_cast_locator.inner_text(timeout=2000).strip()
+
+                unit = ""
+                try:
+                    if unit_locator.count() > 0:
+                        unit = unit_locator.inner_text(timeout=1000).strip()
+                except Exception:
+                    unit = ""
+
+                if not label or not value:
+                    continue
+
+                normalized_label = self._normalize_text_for_parsing(label).lower()
+                normalized_value = self._normalize_text_for_parsing(f"{value} {unit}".strip())
+
+                if normalized_label == "drift":
+                    return self._extract_first_number(normalized_value)
+
+            except Exception:
+                continue
+
+        raise RuntimeError("Could not extract VAM Drift from Pipe Body Properties.")
 
     def _open_blanking_dimensions_tab(self, cds_page: Page) -> None:
         tab_candidates = [

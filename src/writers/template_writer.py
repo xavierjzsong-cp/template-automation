@@ -440,25 +440,6 @@ class TemplateWriter:
         self._write_if_editable(sheet, "B34", formatted.get("qcp"))
         self._write_if_editable(sheet, "H9", formatted.get("overall_length"))
 
-        # Overall length max
-        self._write_if_editable(
-            sheet,
-            "B15",
-            self._get_max_overall_length(formatted.get("overall_length")),
-        )
-
-        # Top thread
-        self._write_if_editable(
-            sheet,
-            "H13",
-            self._format_thread_dimension((formatted.get("top_thread") or {}).get("od")),
-        )
-        self._write_if_editable(
-            sheet,
-            "H14",
-            self._format_thread_dimension((formatted.get("top_thread") or {}).get("id")),
-        )
-
         # Product overall OD max / ID min
         self._write_if_editable(
             sheet,
@@ -469,6 +450,13 @@ class TemplateWriter:
             sheet,
             "B14",
             self._get_overall_id_min(formatted),
+        )
+
+        # Overall length max
+        self._write_if_editable(
+            sheet,
+            "B15",
+            self._get_max_overall_length(formatted.get("overall_length")),
         )
 
         # Thread performance min values
@@ -493,6 +481,18 @@ class TemplateWriter:
             self._get_min_thread_metric(formatted, "collapse", suffix_k=False),
         )
 
+        # Top thread
+        self._write_if_editable(
+            sheet,
+            "H13",
+            self._format_thread_dimension((formatted.get("top_thread") or {}).get("od")),
+        )
+        self._write_if_editable(
+            sheet,
+            "H14",
+            self._format_thread_dimension((formatted.get("top_thread") or {}).get("id")),
+        )
+
         # Bottom thread
         self._write_if_editable(
             sheet,
@@ -505,14 +505,14 @@ class TemplateWriter:
             self._format_thread_dimension((formatted.get("bottom_thread") or {}).get("id")),
         )
 
+        self._write_if_editable(sheet, "B35", self.NA)
+        self._write_if_editable(sheet, "B36", self.NA)
+        self._write_if_editable(sheet, "B37", self.NA)
+
         self._write_if_editable(sheet, "H16", self.DEFAULT_ANGLE)
         self._write_if_editable(sheet, "H18", self.DEFAULT_ANGLE)
         self._write_if_editable(sheet, "H25", self.DEFAULT_ANGLE)
         self._write_if_editable(sheet, "H27", self.DEFAULT_ANGLE)
-
-        self._write_if_editable(sheet, "B35", self.NA)
-        self._write_if_editable(sheet, "B36", self.NA)
-        self._write_if_editable(sheet, "B37", self.NA)
 
         part_number = formatted.get("part_number")
         if not part_number:
