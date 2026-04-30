@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import re
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 
 class PartnerRouter:
+
+    DRIFT_EXTRACTION_THRESHOLD = Decimal("18.125")
 
     # routing
     def route(self, parsed: dict[str, Any]) -> dict[str, Any]:
@@ -26,7 +30,9 @@ class PartnerRouter:
 
         shared_data = {
             "product_material_grade": parsed.get("product_material_grade"),
-            "overall_length": parsed.get("overall_length"),
+            "drift_extraction": self._requires_drift_extraction(
+                parsed.get("overall_length")
+            ),
         }
 
         return {
@@ -54,7 +60,7 @@ class PartnerRouter:
             mapper = mapper_registry.get(partner)
             if mapper is None:
                 #raise ValueError(f"No mapper registered for partner: {partner}")
-                # 先跳过其他mapper 只测试vam mapper
+                # 当前保留跳过逻辑，方便只测试部分 mapper
                 print(f"Skipping target because no mapper is registered for partner: {partner}")
                 continue
 
@@ -79,7 +85,10 @@ class PartnerRouter:
         if not partner:
             return None
 
-        connection_name = self._strip_connection_end(connection.get("name"), connection.get("type"))
+        connection_name = self._strip_connection_end(
+            connection.get("name"),
+            connection.get("type"),
+        )
 
         return {
             "partner": partner,
@@ -91,6 +100,21 @@ class PartnerRouter:
                 "type": connection.get("type"),
             },
         }
+
+    def _requires_drift_extraction(self, overall_length: str | None) -> bool:
+        if not overall_length:
+            return False
+
+        match = re.search(r"(\d+(?:\.\d+)?)", str(overall_length))
+        if not match:
+            return False
+
+        try:
+            value = Decimal(match.group(1))
+        except InvalidOperation:
+            return False
+
+        return value > self.DRIFT_EXTRACTION_THRESHOLD
 
     def _normalize_partner(self, family: str | None) -> str | None:
         if not family:

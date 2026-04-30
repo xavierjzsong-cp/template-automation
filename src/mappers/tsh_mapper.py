@@ -15,11 +15,13 @@ class TshMapper(BaseMapper):
         if partner != "TSH":
             raise ValueError(f"TshMapper received non-TSH target: {target.get('partner')}")
 
+        shared_data = shared_data or {}
         connection = target.get("connection") or {}
 
         return {
             "partner": "TSH",
             "side": target.get("side"),
+            "drift_extraction": bool(shared_data.get("drift_extraction")),
             "connection": {
                 "name": self._map_connection_name(connection.get("name")),
                 "od": self._map_od(connection.get("od")),

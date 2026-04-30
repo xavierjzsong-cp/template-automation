@@ -26,6 +26,7 @@ class VamMapper(BaseMapper):
         return {
             "partner": "VAM",
             "side": target.get("side"),
+            "drift_extraction": bool(shared_data.get("drift_extraction")),
             "connection": {
                 "name": connection.get("name"),
                 "od": self._map_od(connection.get("od")),
@@ -35,32 +36,32 @@ class VamMapper(BaseMapper):
                 "type": connection.get("type"),
             },
         }
-    
+
     # 也可以做成映射表
     # def _map_material_family(self, grade: str | None) -> str | None:
     #     if not grade:
     #         return None
-
+    #
     #     g = grade.upper().replace("[", "(").replace("]", ")").strip()
-
+    #
     #     # if g in {"N/A", "NA"}:
     #     #     return "N/A"
-
+    #
     #     # if "DEEP WELL" in g:
     #     #     return "Deep well"
-
+    #
     #     if g.startswith("13CR"):
     #         return "13% Chromium (13Cr)"
-
+    #
     #     if g.startswith("S13CR") or g.startswith("SUPER 13"):
     #         return "Super 13% Chromium (S13Cr)"
-
+    #
     #     # if g in {"L80", "P110", "C90", "T95"} or "CARBON" in g:
     #     #     return "Carbon Steel"
-
+    #
     #     if "CRA" in g:
     #         return "Corrosion Resistant Alloy (CRA)"
-
+    #
     #     return None
 
     def _map_yield_strength(self, grade: str | None) -> str | None:
@@ -75,14 +76,14 @@ class VamMapper(BaseMapper):
         if value.endswith(".0"):
             value = value[:-2]
         return value
-    
+
     def _map_od(self, od: str | None) -> str | None:
         key = self._normalize_od_key(od)
         if not key:
             return None
 
         return VAM_OD_MAP.get(key, od)
-    
+
     def _map_weight(self, weight: str | None) -> str | None:
         if not weight:
             return None
@@ -91,7 +92,7 @@ class VamMapper(BaseMapper):
             return f"{float(weight):.2f}"
         except ValueError:
             return weight.strip()
-        
+
     def _normalize_od_key(self, od: str | None) -> str | None:
         if not od:
             return None
