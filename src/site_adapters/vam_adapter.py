@@ -16,6 +16,7 @@ from src.utils import ensure_dir, setup_logger
 
 
 class VamAdapter(BaseAdapter):
+
     DROPDOWN_INDEX_MAP = {
         "OD (in)": 0,
         "Weight / WT (lb/ft)": 1,
@@ -26,6 +27,7 @@ class VamAdapter(BaseAdapter):
     }
 
     DEFAULT_DRIFT_OPTION = "API Drift"
+    NA = "NA"
 
     def __init__(
         self,
@@ -43,7 +45,7 @@ class VamAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "vam_adapter_v2.2")
+        self.logger = setup_logger(self.logs_dir, "vam_adapter_v2.3")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
@@ -609,12 +611,14 @@ class VamAdapter(BaseAdapter):
 
         drift_extraction = bool(mapped_data.get("drift_extraction"))
 
-        drift_size: dict[str, Any] = {}
+        drift_size: dict[str, Any] = {
+            "drift": self.NA,
+        }
         if drift_extraction:
             drift_size = {
-                "drift": self._extract_drift_from_pipe_body_properties(cds_page)
+                "drift": self._extract_drift_from_pipe_body_properties(cds_page),
             }
-        
+
         joint_performances = self._extract_joint_performances(cds_page)
 
         self._open_blanking_dimensions_tab(cds_page)

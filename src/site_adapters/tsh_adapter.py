@@ -17,6 +17,9 @@ from src.utils import ensure_dir, setup_logger
 
 
 class TshAdapter(BaseAdapter):
+    
+    NA = "NA"
+
     def __init__(
         self,
         base_url: str,
@@ -37,7 +40,7 @@ class TshAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "tsh_adapter_v1.5")
+        self.logger = setup_logger(self.logs_dir, "tsh_adapter_v1.6")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
@@ -99,10 +102,12 @@ class TshAdapter(BaseAdapter):
 
         blanking_result = self._extract_blanking_dimensions(connection_type)
 
-        drift_data: dict[str, Any] = {}
+        drift_data: dict[str, Any] = {
+            "drift": self.NA,
+        }
         if drift_extraction:
             drift_data = {
-                "drift": self._extract_selected_product_drift()
+                "drift": self._extract_selected_product_drift(),
             }
 
         return {
@@ -704,6 +709,8 @@ class TshAdapter(BaseAdapter):
                 "min": inside_min,
                 "max": inside_max,
             },
+            "external_length": None,
+            "internal_length": None,
         }
 
     def _extract_selected_product_drift(self) -> str | None:

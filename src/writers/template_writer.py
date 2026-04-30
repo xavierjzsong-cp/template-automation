@@ -267,6 +267,13 @@ class TemplateWriter:
             return "+." + text[3:]
         return text
 
+    def _format_thread_length(self, length_value: Any) -> str | None:
+        value = self._extract_decimal_from_value(length_value)
+        if value is None:
+            return None
+
+        return f"{self._format_decimal(value)} +.125/ -.000"
+
     def _get_thread_dimension_max(self, dimension: dict[str, Any] | None) -> Decimal | None:
         if not dimension:
             return None
@@ -305,7 +312,7 @@ class TemplateWriter:
 
         return None
 
-    def _get_overall_od_max(self, formatted: dict[str, Any]) -> str | None:
+    def _get_overall_od_max_decimal(self, formatted: dict[str, Any]) -> Decimal | None:
         top_thread = formatted.get("top_thread") or {}
         bottom_thread = formatted.get("bottom_thread") or {}
 
@@ -318,9 +325,9 @@ class TemplateWriter:
         if not candidates:
             return None
 
-        return self._format_decimal(max(candidates))
+        return max(candidates)
 
-    def _get_overall_id_min(self, formatted: dict[str, Any]) -> str | None:
+    def _get_overall_id_min_decimal(self, formatted: dict[str, Any]) -> Decimal | None:
         top_thread = formatted.get("top_thread") or {}
         bottom_thread = formatted.get("bottom_thread") or {}
 
@@ -333,7 +340,19 @@ class TemplateWriter:
         if not candidates:
             return None
 
-        return self._format_decimal(min(candidates))
+        return min(candidates)
+
+    def _get_overall_od_max(self, formatted: dict[str, Any]) -> str | None:
+        value = self._get_overall_od_max_decimal(formatted)
+        if value is None:
+            return None
+        return self._format_decimal(value)
+
+    def _get_overall_id_min(self, formatted: dict[str, Any]) -> str | None:
+        value = self._get_overall_id_min_decimal(formatted)
+        if value is None:
+            return None
+        return self._format_decimal(value)
 
     def _get_min_thread_metric(
         self,
@@ -364,12 +383,48 @@ class TemplateWriter:
 
         return self._format_metric_number(min_value, use_comma=True)
 
+    def _get_drift_size_for_template(self, formatted: dict[str, Any]) -> str:
+        top_thread = formatted.get("top_thread") or {}
+        bottom_thread = formatted.get("bottom_thread") or {}
+
+        top_drift_raw = top_thread.get("drift")
+        if self._is_na_value(top_drift_raw):
+            return self.NA
+
+        id_min = self._get_overall_id_min_decimal(formatted)
+        if id_min is None:
+            return self.NA
+
+        top_drift = self._extract_decimal_from_value(top_drift_raw)
+        if top_drift is not None and top_drift <= id_min:
+            return self._format_decimal(top_drift)
+
+        bottom_drift_raw = bottom_thread.get("drift")
+        if self._is_na_value(bottom_drift_raw):
+            return self.NA
+
+        bottom_drift = self._extract_decimal_from_value(bottom_drift_raw)
+        if bottom_drift is not None and bottom_drift <= id_min:
+            return self._format_decimal(bottom_drift)
+
+        return self.NA
+
+    def _is_na_value(self, value: Any) -> bool:
+        if value is None:
+            return True
+
+        text = str(value).strip().upper()
+        return text in {"", "NA", "N/A"}
+
     def _extract_decimal_from_value(self, value: Any) -> Decimal | None:
         if value is None:
             return None
 
         text = str(value).strip()
         if not text:
+            return None
+
+        if self._is_na_value(text):
             return None
 
         match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", text)
@@ -412,7 +467,6 @@ class TemplateWriter:
         value = value.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
         return f"{value:.3f}"
 
-    # Template writing
     def _write_to_template(
         self,
         template_path: str | Path,
@@ -440,7 +494,6 @@ class TemplateWriter:
         self._write_if_editable(sheet, "B34", formatted.get("qcp"))
         self._write_if_editable(sheet, "H9", formatted.get("overall_length"))
 
-        # Product overall OD max / ID min
         self._write_if_editable(
             sheet,
             "B13",
@@ -451,15 +504,12 @@ class TemplateWriter:
             "B14",
             self._get_overall_id_min(formatted),
         )
-
-        # Overall length max
         self._write_if_editable(
             sheet,
             "B15",
             self._get_max_overall_length(formatted.get("overall_length")),
         )
 
-        # Thread performance min values
         self._write_if_editable(
             sheet,
             "B22",
@@ -481,6 +531,12 @@ class TemplateWriter:
             self._get_min_thread_metric(formatted, "collapse", suffix_k=False),
         )
 
+        self._write_if_editable(
+            sheet,
+            "B33",
+            self._get_drift_size_for_template(formatted),
+        )
+
         # Top thread
         self._write_if_editable(
             sheet,
@@ -491,6 +547,16 @@ class TemplateWriter:
             sheet,
             "H14",
             self._format_thread_dimension((formatted.get("top_thread") or {}).get("id")),
+        )
+        self._write_if_editable(
+            sheet,
+            "H15",
+            self._format_thread_length((formatted.get("top_thread") or {}).get("external_length")),
+        )
+        self._write_if_editable(
+            sheet,
+            "H17",
+            self._format_thread_length((formatted.get("top_thread") or {}).get("internal_length")),
         )
 
         # Bottom thread
@@ -503,6 +569,16 @@ class TemplateWriter:
             sheet,
             "H23",
             self._format_thread_dimension((formatted.get("bottom_thread") or {}).get("id")),
+        )
+        self._write_if_editable(
+            sheet,
+            "H24",
+            self._format_thread_length((formatted.get("bottom_thread") or {}).get("external_length")),
+        )
+        self._write_if_editable(
+            sheet,
+            "H26",
+            self._format_thread_length((formatted.get("bottom_thread") or {}).get("internal_length")),
         )
 
         self._write_if_editable(sheet, "B35", self.NA)
