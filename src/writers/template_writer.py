@@ -249,22 +249,23 @@ class TemplateWriter:
                 upper_tol = tol_1
                 lower_tol = tol_2
 
-        upper_tol = self._compact_positive_tol(upper_tol)
+        upper_tol = self._compact_tol(upper_tol)
+        lower_tol = self._compact_tol(lower_tol)
 
-        if lower_tol.startswith("+"):
-            lower_part = f"/{self._compact_positive_tol(lower_tol)}"
-        else:
-            lower_part = f"/ {lower_tol}"
+        return f"{nominal} {upper_tol} /{lower_tol}"
 
-        return f"{nominal} {upper_tol} {lower_part}"
-
-    def _compact_positive_tol(self, tol: str | None) -> str | None:
+    def _compact_tol(self, tol: str | None) -> str | None:
         if not tol:
             return None
 
         text = str(tol).strip()
+
         if text.startswith("+0."):
             return "+." + text[3:]
+
+        if text.startswith("-0."):
+            return "-." + text[3:]
+
         return text
 
     def _format_thread_length(self, length_value: Any) -> str | None:

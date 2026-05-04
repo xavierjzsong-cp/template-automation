@@ -9,6 +9,5 @@ writer：执行自动化写入template的操作
 进度：
 1. template_writer 中还有比较逻辑（写入哪个 worksheet）、write（三个 coating）和format操作需要完善
 2. pots_doc_parser - 三个 coating 也可以从 pots doc 中提取
-3. tsh_adapter - 
-4. vam_mapper 还有字段（MF、Grade）匹配逻辑没有实现 - 等待 list
-5. tsh_mapper - Grade 字段目前是 hardcode
+3. vam_mapper 还有字段（MF、Grade）匹配逻辑没有实现 - 等待 list
+4. tsh_mapper - Grade 字段目前是 hardcode
