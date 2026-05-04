@@ -274,6 +274,9 @@ class TemplateWriter:
 
         return f"{self._format_decimal(value)} +.125/ -.000"
 
+    def _format_drift_size(self, drift_value: Decimal) -> str:
+        return f"{self._format_decimal(drift_value)} +.020/-.000"
+
     def _get_thread_dimension_max(self, dimension: dict[str, Any] | None) -> Decimal | None:
         if not dimension:
             return None
@@ -396,16 +399,16 @@ class TemplateWriter:
             return self.NA
 
         top_drift = self._extract_decimal_from_value(top_drift_raw)
-        if top_drift is not None and top_drift <= id_min:
-            return self._format_decimal(top_drift)
+        if top_drift is not None and top_drift < id_min:
+            return self._format_drift_size(top_drift)
 
         bottom_drift_raw = bottom_thread.get("drift")
         if self._is_na_value(bottom_drift_raw):
             return self.NA
 
         bottom_drift = self._extract_decimal_from_value(bottom_drift_raw)
-        if bottom_drift is not None and bottom_drift <= id_min:
-            return self._format_decimal(bottom_drift)
+        if bottom_drift is not None and bottom_drift < id_min:
+            return self._format_drift_size(bottom_drift)
 
         return self.NA
 

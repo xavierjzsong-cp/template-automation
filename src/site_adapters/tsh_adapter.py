@@ -17,7 +17,7 @@ from src.utils import ensure_dir, setup_logger
 
 
 class TshAdapter(BaseAdapter):
-    
+
     NA = "NA"
 
     def __init__(
@@ -40,7 +40,7 @@ class TshAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "tsh_adapter_v1.6")
+        self.logger = setup_logger(self.logs_dir, "tsh_adapter_v1.7")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
@@ -105,6 +105,7 @@ class TshAdapter(BaseAdapter):
         drift_data: dict[str, Any] = {
             "drift": self.NA,
         }
+
         if drift_extraction:
             drift_data = {
                 "drift": self._extract_selected_product_drift(),
@@ -154,17 +155,30 @@ class TshAdapter(BaseAdapter):
                     return false;
                 }
 
-                const roots = Array.from(
-                    scope.querySelectorAll("div.select-dropdown[data-component='dropdown']")
-                ).filter(root => root.querySelectorAll("option.dropdown-option").length > 0);
+                function isVisible(el) {
+                    if (!el) return false;
+                    const style = window.getComputedStyle(el);
+                    const rect = el.getBoundingClientRect();
 
-                if (roots.length < expectedCount) {
-                    return false;
+                    return style
+                        && style.display !== "none"
+                        && style.visibility !== "hidden"
+                        && rect.width > 0
+                        && rect.height > 0;
                 }
 
-                return roots
-                    .slice(0, expectedCount)
-                    .every(root => root.querySelectorAll("option.dropdown-option").length > 1);
+                const roots = Array.from(
+                    scope.querySelectorAll("div.select-dropdown[data-component='dropdown']")
+                ).filter(root => {
+                    const optionCount = root.querySelectorAll("option.dropdown-option").length;
+                    const trigger = root.querySelector(
+                        ".select2-selection, .select2-selection__rendered, [role='combobox'], .dropdownicon"
+                    );
+
+                    return optionCount > 1 && (isVisible(root) || isVisible(trigger));
+                });
+
+                return roots.length >= expectedCount;
             }
             """,
             arg=expected_count,
@@ -241,6 +255,7 @@ class TshAdapter(BaseAdapter):
         self._open_select2_dropdown(root)
 
         search_input = self._get_visible_select2_search_input()
+        search_input.click(force=True)
         search_input.fill(search_text)
         self.page.wait_for_timeout(700)
 
@@ -270,45 +285,112 @@ class TshAdapter(BaseAdapter):
             pass
 
     def _open_select2_dropdown(self, root) -> None:
+        try:
+            self.page.keyboard.press("Escape")
+            self.page.wait_for_timeout(300)
+        except Exception:
+            pass
+
         trigger_candidates = [
-            root.locator(".select2-container").first,
             root.locator(".select2-selection").first,
             root.locator(".select2-selection__rendered").first,
+            root.locator(".select2-selection__arrow").first,
+            root.locator("[role='combobox']").first,
             root.locator(".dropdownicon").first,
+            root.locator(".select2-container").first,
             root,
         ]
 
-        opened = False
+        last_error: Exception | None = None
 
         for trigger in trigger_candidates:
             try:
-                if trigger.is_visible(timeout=1000):
-                    trigger.scroll_into_view_if_needed()
-                    trigger.click(force=True)
-                    self.page.wait_for_timeout(500)
-                    opened = True
-                    break
-            except Exception:
+                if not trigger.is_visible(timeout=1000):
+                    continue
+
+                trigger.scroll_into_view_if_needed()
+                self.page.wait_for_timeout(300)
+
+                try:
+                    trigger.click(timeout=2000)
+                except Exception:
+                    trigger.click(force=True, timeout=2000)
+
+                if self._wait_for_select2_dropdown_opened(timeout_ms=3000):
+                    return
+
+            except Exception as exc:
+                last_error = exc
                 continue
 
-        if not opened:
-            raise RuntimeError("Could not open TSH Select2 dropdown.")
-
         try:
-            self.page.locator(".select2-container--open").first.wait_for(
-                state="visible",
-                timeout=5000,
-            )
+            handle = root.element_handle()
+            if handle:
+                handle.evaluate(
+                    """
+                    (root) => {
+                        const targets = [
+                            root.querySelector(".select2-selection"),
+                            root.querySelector(".select2-selection__rendered"),
+                            root.querySelector(".select2-selection__arrow"),
+                            root.querySelector("[role='combobox']"),
+                            root.querySelector(".dropdownicon"),
+                            root.querySelector(".select2-container"),
+                            root
+                        ].filter(Boolean);
+
+                        for (const target of targets) {
+                            target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+                            target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+                            target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+                        }
+                    }
+                    """
+                )
+
+                if self._wait_for_select2_dropdown_opened(timeout_ms=3000):
+                    return
+
         except Exception as exc:
-            raise RuntimeError("TSH Select2 dropdown did not enter open state.") from exc
+            last_error = exc
+
+        raise RuntimeError("TSH Select2 dropdown did not enter open state.") from last_error
+
+    def _wait_for_select2_dropdown_opened(self, timeout_ms: int = 3000) -> bool:
+        selectors = [
+            ".select2-container--open input.select2-search__field",
+            ".select2-container--open input[role='searchbox']",
+            ".select2-dropdown input.select2-search__field",
+            ".select2-dropdown input[role='searchbox']",
+            ".select2-results__option[role='option']",
+            "li.select2-results__option",
+        ]
+
+        elapsed = 0
+        interval = 200
+
+        while elapsed < timeout_ms:
+            for selector in selectors:
+                try:
+                    locator = self.page.locator(selector).first
+                    if locator.is_visible(timeout=200):
+                        return True
+                except Exception:
+                    continue
+
+            self.page.wait_for_timeout(interval)
+            elapsed += interval
+
+        return False
 
     def _get_visible_select2_search_input(self):
         candidates = [
             self.page.locator(".select2-container--open input.select2-search__field").first,
             self.page.locator(".select2-container--open input[role='searchbox']").first,
+            self.page.locator(".select2-dropdown input.select2-search__field").first,
+            self.page.locator(".select2-dropdown input[role='searchbox']").first,
             self.page.locator("input.select2-search__field").first,
             self.page.locator("input[role='searchbox']").first,
-            self.page.locator(".select2-dropdown input").first,
         ]
 
         for candidate in candidates:
@@ -406,16 +488,49 @@ class TshAdapter(BaseAdapter):
             has=self.page.locator("option.dropdown-option")
         )
 
+    def _is_dropdown_root_interactable(self, root) -> bool:
+        trigger_candidates = [
+            root.locator(".select2-selection").first,
+            root.locator(".select2-selection__rendered").first,
+            root.locator("[role='combobox']").first,
+            root.locator(".dropdownicon").first,
+            root,
+        ]
+
+        for trigger in trigger_candidates:
+            try:
+                if trigger.is_visible(timeout=500):
+                    return True
+            except Exception:
+                continue
+
+        return False
+
     def _get_dropdown_root(self, dropdown_index: int):
         roots = self._get_dropdown_roots()
-        count = roots.count()
 
-        if count <= dropdown_index:
-            raise RuntimeError(
-                f"TSH product dropdown root index {dropdown_index} not found. Found count={count}"
-            )
+        try:
+            raw_count = roots.count()
+        except Exception:
+            raw_count = 0
 
-        return roots.nth(dropdown_index)
+        visible_index = 0
+
+        for raw_index in range(raw_count):
+            root = roots.nth(raw_index)
+
+            if not self._is_dropdown_root_interactable(root):
+                continue
+
+            if visible_index == dropdown_index:
+                return root
+
+            visible_index += 1
+
+        raise RuntimeError(
+            f"TSH dropdown root index {dropdown_index} not found. "
+            f"raw_count={raw_count}, interactable_count={visible_index}"
+        )
 
     def _get_dropdown_option_texts(self, dropdown_index: int) -> list[str]:
         root = self._get_dropdown_root(dropdown_index)
@@ -689,6 +804,8 @@ class TshAdapter(BaseAdapter):
         else:
             raise RuntimeError(f"Unsupported TSH connection type: {connection_type}")
 
+        length_min = self._extract_length_min(section_text)
+
         outside_min = self._extract_first_number_after_label(section_text, "Outside Diameter Min")
         outside_max = self._extract_first_number_after_label(section_text, "Outside Diameter Max")
         inside_min = self._extract_first_number_after_label(section_text, "Inside Diameter Min")
@@ -709,8 +826,8 @@ class TshAdapter(BaseAdapter):
                 "min": inside_min,
                 "max": inside_max,
             },
-            "external_length": None,
-            "internal_length": None,
+            "external_length": length_min,
+            "internal_length": length_min,
         }
 
     def _extract_selected_product_drift(self) -> str | None:
@@ -751,6 +868,19 @@ class TshAdapter(BaseAdapter):
                 end_idx = idx
 
         return text[start_idx:end_idx].strip()
+    
+    def _extract_length_min(self, section_text: str) -> str | None:
+        value = self._extract_first_number_after_label(section_text, "Length Min")
+
+        if value is None:
+            raise RuntimeError(
+                f"TSH blanking section missing Length Min: {section_text[:500]}"
+            )
+
+        try:
+            return f"{float(value.replace(',', '').strip()):.3f}"
+        except ValueError as exc:
+            raise RuntimeError(f"Invalid TSH Length Min value: {value}") from exc
 
     def _extract_first_number_after_label(self, text: str, label: str) -> str | None:
         pattern = rf"{re.escape(label)}\s+([+\-]?\d+(?:,\d{{3}})*(?:\.\d+)?)"
