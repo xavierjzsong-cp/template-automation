@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from src.mappers.base_mapper import BaseMapper
@@ -16,6 +17,7 @@ class TshMapper(BaseMapper):
             raise ValueError(f"TshMapper received non-TSH target: {target.get('partner')}")
 
         shared_data = shared_data or {}
+        product_material_grade = shared_data.get("product_material_grade")
         connection = target.get("connection") or {}
 
         return {
@@ -26,7 +28,8 @@ class TshMapper(BaseMapper):
                 "name": self._map_connection_name(connection.get("name")),
                 "od": self._map_od(connection.get("od")),
                 "weight": self._map_weight(connection.get("weight")),
-                "grade": self._map_grade(shared_data),
+                "material_family": self._map_material_family(product_material_grade),
+                "yield_strength": self._map_yield_strength(product_material_grade),
                 "type": connection.get("type"),
             },
         }
@@ -58,7 +61,32 @@ class TshMapper(BaseMapper):
             return f"{float(weight):.2f}"
         except ValueError:
             return weight.strip()
+    
+    def _map_material_family(self, grade: str | None) -> str | None:
+        if not grade:
+            return None
 
-    def _map_grade(self, shared_data: dict[str, Any] | None) -> str:
-        # 当前先 hardcode
-        return "L80 Type 13Cr"
+        text = grade.strip().upper()
+        match = re.match(r"^([A-Z0-9]+)\s*[\(\[]", text)
+        if match:
+            return match.group(1)
+
+        match = re.match(r"^([A-Z0-9]+)", text)
+        if match:
+            return match.group(1)
+
+        return None
+
+    def _map_yield_strength(self, grade: str | None) -> str | None:
+        if not grade:
+            return None
+
+        match = re.search(r"[\(\[](\d+(?:\.\d+)?)[\)\]]", grade)
+        if not match:
+            return None
+
+        value = match.group(1)
+        if value.endswith(".0"):
+            value = value[:-2]
+
+        return value
