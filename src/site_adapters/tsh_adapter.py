@@ -65,15 +65,17 @@ class TshAdapter(BaseAdapter):
 
         od = connection.get("od")
         weight = connection.get("weight")
-        grade = connection.get("grade")
+        material_family = connection.get("material_family")
+        yield_strength = connection.get("yield_strength")
         connection_name = connection.get("name")
         connection_type = (connection.get("type") or "").upper()
 
         drift_extraction = bool(mapped_data.get("drift_extraction"))
 
-        if not od or not weight or not grade or not connection_name:
+        if not od or not weight or not material_family or not yield_strength or not connection_name:
             raise ValueError(
-                "TSH mapped_data missing one of required fields: od, weight, grade, connection.name"
+                "TSH mapped_data missing one of required fields: "
+                "od, weight, material_family, yield_strength, connection.name"
             )
 
         if connection_type not in {"BOX", "PIN"}:
@@ -84,7 +86,10 @@ class TshAdapter(BaseAdapter):
 
         self._select_od(od)
         self._select_weight(weight)
-        self._select_grade(grade)
+        self._select_grade(
+            material_family=material_family,
+            yield_strength=yield_strength,
+        )
         self._select_connection(connection_name)
 
         self._wait_for_connection_loaded()
@@ -201,11 +206,17 @@ class TshAdapter(BaseAdapter):
             target_value=weight_value,
         )
 
-    def _select_grade(self, grade_value: str) -> None:
+    def _select_grade(
+        self,
+        material_family: str,
+        yield_strength: str,
+    ) -> None:
+        grade_value = f"{material_family} {yield_strength}".strip()
+
         self._select_dropdown_by_search(
             dropdown_index=2,
             search_text=grade_value,
-            match_mode="contains",
+            match_mode="grade",
             target_value=grade_value,
         )
 
@@ -564,6 +575,9 @@ class TshAdapter(BaseAdapter):
 
         if match_mode == "weight_blanking":
             return self._score_weight_option_blanking(option_text, target_value)
+        
+        if match_mode == "grade":
+            return self._score_grade_option(option_text, target_value)
 
         if match_mode == "connection":
             return self._score_connection_option(option_text, target_value)
@@ -635,6 +649,39 @@ class TshAdapter(BaseAdapter):
 
         if self._strip_trailing_zero_for_search(target_weight) in option_clean:
             return 7000 - len(option_clean)
+
+        return None
+    
+    def _score_grade_option(self, option_text: str, target_value: str) -> int | None:
+        option_clean = self._normalize_dropdown_option_text(option_text).upper()
+        target_clean = self._normalize_dropdown_option_text(target_value).upper()
+
+        if not option_clean or not target_clean:
+            return None
+
+        if option_clean == target_clean:
+            return 10000
+
+        target_tokens = re.findall(r"[A-Z0-9.]+", target_clean)
+
+        if len(target_tokens) < 2:
+            return self._score_contains_option(option_text, target_value)
+
+        material_family = target_tokens[0]
+        yield_strength = target_tokens[1]
+
+        material_family_matched = material_family in option_clean
+
+        yield_strength_matched = bool(
+            re.search(rf"(^|[^0-9]){re.escape(yield_strength)}([^0-9]|$)", option_clean)
+            or re.search(rf"\bL{re.escape(yield_strength)}\b", option_clean)
+        )
+
+        if material_family_matched and yield_strength_matched:
+            return 10000 - len(option_clean)
+
+        if material_family_matched:
+            return 4000 - len(option_clean)
 
         return None
 
