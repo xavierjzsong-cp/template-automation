@@ -9,28 +9,16 @@ partners:
       homepage: "https://www.vamservices.com"
       connection_datasheet: "https://www.vamservices.com/product/configurator"
       blanking_dimensions: "https://www.vamservices.com/product/configurator;blanking=true"
-    
-    hardcoded_request:
-      filters:
-        OD (in): "3-1/2"
-        Weight / WT (lb/ft): "9.20"
-        Grade: "C90"
-        Drift Option: "API Drift"
-
-      connection: "VAM 21"
-      result_index: 0
 
     capabilities:
       supports_connection_datasheet: true
       supports_blanking_dimensions: true
       requires_login: false
 
-    notes: "Primary V1 automation target."
-
   TSH:
     display_name: "TSH (TenarisHydril)"
     company_name: "Tenaris"
-    adapter: "tenaris_adapter"
+    adapter: "tsh_adapter"
     enabled: true
 
     urls:
@@ -39,12 +27,9 @@ partners:
       blanking_dimensions: "https://dcp.tenaris.com/BlankingDimensions"
 
     capabilities:
-      supports_configurator: false
       supports_connection_datasheet: true
       supports_blanking_dimensions: true
       requires_login: false
-
-    notes: "May need separate handling for Tenaris DCP flows."
 
   JFE:
     display_name: "JFE"
@@ -53,22 +38,19 @@ partners:
     enabled: true
 
     urls:
-      homepage: "https://www.jfetools.com/datasheet_generator"
+      homepage: "https://www.jfetools.com/"
       connection_datasheet: "https://www.jfetools.com/datasheet_generator"
-      blanking_dimensions: null
+      blanking_dimensions: "https://www.jfetools.com/blanking_dimensions"
 
     capabilities:
-      supports_configurator: false
       supports_connection_datasheet: true
-      supports_blanking_dimensions: false
+      supports_blanking_dimensions: true
       requires_login: false
-
-    notes: "Datasheet generator entry point."
 
   SLHT:
     display_name: "SLHT (Seal-Lock)"
     company_name: "Hunting PLC"
-    adapter: "hunting_adapter"
+    adapter: "slht_adapter"
     enabled: true
 
     urls:
@@ -77,7 +59,6 @@ partners:
       blanking_dimensions: null
 
     capabilities:
-      supports_configurator: false
       supports_connection_datasheet: true
       supports_blanking_dimensions: false
       requires_login: false
