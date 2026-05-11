@@ -40,7 +40,7 @@ class TshAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "tsh_adapter_v1.7")
+        self.logger = setup_logger(self.logs_dir, "tsh_adapter_v1.8")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
@@ -94,6 +94,15 @@ class TshAdapter(BaseAdapter):
 
         self._wait_for_connection_loaded()
 
+        drift_data: dict[str, Any] = {
+            "drift": self.NA,
+        }
+
+        if drift_extraction:
+            drift_data = {
+                "drift": self._extract_drift_size(),
+            }
+        
         datasheet_result = self._extract_connection_performance()
 
         # Blanking Dimensions flow
@@ -106,15 +115,6 @@ class TshAdapter(BaseAdapter):
         self._wait_for_blanking_dimensions_loaded()
 
         blanking_result = self._extract_blanking_dimensions(connection_type)
-
-        drift_data: dict[str, Any] = {
-            "drift": self.NA,
-        }
-
-        if drift_extraction:
-            drift_data = {
-                "drift": self._extract_selected_product_drift(),
-            }
 
         return {
             **datasheet_result,
@@ -575,7 +575,7 @@ class TshAdapter(BaseAdapter):
 
         if match_mode == "weight_blanking":
             return self._score_weight_option_blanking(option_text, target_value)
-        
+
         if match_mode == "grade":
             return self._score_grade_option(option_text, target_value)
 
@@ -651,7 +651,7 @@ class TshAdapter(BaseAdapter):
             return 7000 - len(option_clean)
 
         return None
-    
+
     def _score_grade_option(self, option_text: str, target_value: str) -> int | None:
         option_clean = self._normalize_dropdown_option_text(option_text).upper()
         target_clean = self._normalize_dropdown_option_text(target_value).upper()
@@ -772,7 +772,8 @@ class TshAdapter(BaseAdapter):
             """
             () => {
                 const txt = document.body.innerText || "";
-                return txt.includes("Connection Data")
+                return txt.includes("Pipe Body Data")
+                    && txt.includes("Connection Data")
                     && txt.includes("Performance")
                     && txt.includes("Joint Yield Strength")
                     && txt.includes("Compression Strength");
@@ -877,25 +878,33 @@ class TshAdapter(BaseAdapter):
             "internal_length": length_min,
         }
 
-    def _extract_selected_product_drift(self) -> str | None:
+    def _extract_drift_size(self) -> str | None:
         body_text = self.page.locator("body").inner_text(timeout=5000)
         normalized = self._normalize_text(body_text)
 
-        selected_product_section = self._extract_section(
+        pipe_body_section = self._extract_section(
             text=normalized,
-            start_label="Selected Product",
-            end_candidates=["Box", "Pin"],
+            start_label="Pipe Body Data",
+            end_candidates=["Connection Data"],
         )
 
-        pattern = r"Drift\s*\(in\)\s+([+\-]?\d+(?:,\d{3})*(?:\.\d+)?)"
-        match = re.search(pattern, selected_product_section, flags=re.IGNORECASE)
+        geometry_section = self._extract_section(
+            text=pipe_body_section,
+            start_label="Geometry",
+            end_candidates=["Performance"],
+        )
 
-        if match:
-            return match.group(1)
+        drift = self._extract_first_number_after_label(
+            geometry_section,
+            "Drift",
+        )
+
+        if drift:
+            return drift
 
         raise RuntimeError(
-            f"Could not extract TSH Drift from Selected Product section: "
-            f"{selected_product_section[:500]}"
+            f"Could not extract TSH Drift from datasheet Pipe Body Data -> Geometry section: "
+            f"{geometry_section[:500]}"
         )
 
     def _extract_section(
@@ -915,7 +924,7 @@ class TshAdapter(BaseAdapter):
                 end_idx = idx
 
         return text[start_idx:end_idx].strip()
-    
+
     def _extract_length_min(self, section_text: str) -> str | None:
         value = self._extract_first_number_after_label(section_text, "Length Min")
 

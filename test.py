@@ -14,6 +14,7 @@ from src.adapters.vam_adapter import VamAdapter
 from src.mappers.tsh_mapper import TshMapper
 from src.adapters.tsh_adapter import TshAdapter
 from src.writers.template_writer import TemplateWriter
+from src.adapters.jfe_adapter import JfeAdapter
 
 
 """
@@ -259,6 +260,108 @@ def main() -> None:
 """
 
 # test JFE
+def load_partners_config(config_path: Path) -> dict[str, Any]:
+    if not config_path.exists():
+        raise FileNotFoundError(f"partners.yaml not found: {config_path}")
+
+    with config_path.open("r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+
+    if not isinstance(data, dict):
+        raise ValueError(f"Invalid partners.yaml structure: {config_path}")
+
+    return data
+
+
+def get_partner_config(partners_config: dict[str, Any], partner: str) -> dict[str, Any]:
+    partner = partner.upper()
+
+    partners = partners_config.get("partners")
+    if not isinstance(partners, dict):
+        raise ValueError("partners.yaml must contain a top-level 'partners' dictionary")
+
+    cfg = partners.get(partner)
+    if not isinstance(cfg, dict):
+        raise KeyError(f"Partner config not found for partner: {partner}")
+
+    return cfg
+
+
+def main() -> None:
+    project_root = Path(__file__).resolve().parent
+
+    partners_config_path = project_root / "config" / "partners.yaml"
+    partners_config = load_partners_config(partners_config_path)
+
+    partner_cfg = get_partner_config(partners_config, "JFE")
+    urls = partner_cfg.get("urls") or {}
+
+    base_url = urls.get("homepage")
+    datasheet_url = urls.get("connection_datasheet")
+    blanking_url = urls.get("blanking_dimensions")
+
+    if not base_url:
+        raise ValueError("JFE config missing urls.homepage")
+    if not datasheet_url:
+        raise ValueError("JFE config missing urls.connection_datasheet")
+    if not blanking_url:
+        raise ValueError("JFE config missing urls.blanking_dimensions")
+
+    # 模拟最终 JFE mapper 输出
+    mapped_data = {
+        "partner": "JFE",
+        "side": "upper",
+        "drift_extraction": True,
+        "connection": {
+            "name": "JFEBEAR",
+            "od": "3.500",
+            "weight": "9.2",
+            "grade": "L80-13CR",
+            "friction": "API Modified",
+            "coupling": "STD",
+            "type": "BOX",
+        },
+    }
+
+    adapter = JfeAdapter(
+        base_url=base_url,
+        datasheet_url=datasheet_url,
+        blanking_url=blanking_url,
+        logs_dir=project_root / "logs",
+        headless=False,
+        slow_mo=300,
+        timeout_ms=10000,
+        navigation_timeout_ms=60000,
+    )
+
+    try:
+        adapter_result = adapter.run(mapped_data)
+    finally:
+        adapter.close()
+
+    print("\n=== JFE Adapter Result ===")
+    print(adapter_result)
+
+    required_keys = {
+        "tensile",
+        "compression",
+        "burst",
+        "collapse",
+        "od",
+        "id",
+        "external_length",
+        "internal_length",
+        "drift",
+    }
+
+    missing = required_keys - set(adapter_result.keys())
+    if missing:
+        raise AssertionError(f"JFE adapter result missing keys: {sorted(missing)}")
+
+    if adapter_result["drift"] in {None, "", "NA"}:
+        raise AssertionError("Expected drift value, but got empty or NA")
+
+    print("\nJFE adapter test passed.")
 
 
 if __name__ == "__main__":

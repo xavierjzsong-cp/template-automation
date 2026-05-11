@@ -15,34 +15,17 @@ from playwright.sync_api import (
 from src.adapters.base_adapter import BaseAdapter
 from src.utils import ensure_dir, setup_logger
 
+
 # --------------------------------------------------------------------------------------------------------------------------
-# 目前这一版先只实现 datasheet_generator 页面：
-# 打开页面 → 按顺序选择 hardcode 的 7 个字段 → 等待右侧 datasheet 内容加载出来
+# 当前版本实现 datasheet_generator 页面：
+# 打开页面 → 根据 mapped_data 按顺序选择 6 个字段
+# → 抓取 Joint Strength、Compression Rating、Internal Yield Pressure、Collapse Pressure、Drift Diameter
 # --------------------------------------------------------------------------------------------------------------------------
+
 
 class JfeAdapter(BaseAdapter):
 
     NA = "NA"
-
-    DATASHEET_SELECTIONS = [
-        ("Connection", "JFEBEAR"),
-        ("Size", "3.500"),
-        ("Weight", "9.2"),
-        ("Grade", "L80-13CR"),
-        ("Friction", "API Modified"),
-        ("Coupling", "STD"),
-        ("Bevel", "45° Standard"),
-    ]
-
-    FIELD_LABEL_ALIASES = {
-        "Connection": ["Connection"],
-        "Size": ["Size", "OD", "Outside Diameter"],
-        "Weight": ["Weight"],
-        "Grade": ["Grade"],
-        "Friction": ["Friction", "Thread Compound", "Compound"],
-        "Coupling": ["Coupling"],
-        "Bevel": ["Bevel"],
-    }
 
     def __init__(
         self,
@@ -64,7 +47,7 @@ class JfeAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "jfe_adapter_v2.0")
+        self.logger = setup_logger(self.logs_dir, "jfe_adapter_v2.2")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
@@ -89,16 +72,19 @@ class JfeAdapter(BaseAdapter):
         self.logger.info("Mapped data: %s", mapped_data)
 
         self.open_datasheet_page()
-        self._wait_for_datasheet_page_ready()
+        self._wait_for_datasheet_page_loaded()
 
-        self._select_datasheet_options()
+        self._select_datasheet_options(mapped_data)
         self._wait_for_datasheet_result_loaded()
 
         return self.extract_required_data(
             mapped_data=mapped_data,
         )
 
+    # ------------------------------------------------------------------
     # Page open
+    # ------------------------------------------------------------------
+
     def open_datasheet_page(self) -> None:
         self.logger.info(
             "Opening JFE connection datasheet page: %s",
@@ -140,7 +126,7 @@ class JfeAdapter(BaseAdapter):
     # Page readiness checks
     # ------------------------------------------------------------------
 
-    def _wait_for_datasheet_page_ready(self) -> None:
+    def _wait_for_datasheet_page_loaded(self) -> None:
         self.page.wait_for_function(
             """
             () => {
@@ -163,7 +149,7 @@ class JfeAdapter(BaseAdapter):
 
         self._wait_for_loading_overlay_hidden()
 
-    def _wait_for_blanking_page_ready(self) -> None:
+    def _wait_for_blanking_page_loaded(self) -> None:
         self.page.wait_for_timeout(1000)
 
     def _wait_for_loading_overlay_hidden(self) -> None:
@@ -195,27 +181,13 @@ class JfeAdapter(BaseAdapter):
         self.page.wait_for_function(
             """
             () => {
-                const page = document.querySelector("#datasheet_page");
-                if (!page) return false;
+                const txt = document.body.innerText || "";
 
-                const contentColumns = Array.from(
-                    page.querySelectorAll(".padding-xy-3 .columns.is-mobile > .column")
-                ).filter(el => !el.classList.contains("sidebar"));
-
-                const contentText = contentColumns
-                    .map(el => el.innerText || "")
-                    .join(" ")
-                    .replace(/\\s+/g, " ")
-                    .trim();
-
-                const downloadButtonEnabled = Array.from(
-                    document.querySelectorAll("button")
-                ).some(button => {
-                    const text = (button.innerText || "").trim();
-                    return text.includes("Download") && !button.disabled;
-                });
-
-                return contentText.length > 30 || downloadButtonEnabled;
+                return txt.includes("CONNECTION PERFORMANCE")
+                    && txt.includes("Joint Strength")
+                    && txt.includes("Compression Rating")
+                    && txt.includes("Internal Yield Pressure")
+                    && txt.includes("Collapse Pressure");
             }
             """,
             timeout=30000,
@@ -225,19 +197,44 @@ class JfeAdapter(BaseAdapter):
     # Datasheet selections
     # ------------------------------------------------------------------
 
-    def _select_datasheet_options(self) -> None:
-        for field_label, option_text in self.DATASHEET_SELECTIONS:
+    def _select_datasheet_options(self, mapped_data: dict[str, Any]) -> None:
+        selections = self._build_datasheet_selections(mapped_data)
+
+        for field_label, option_text in selections:
             self._select_datasheet_dropdown(
                 field_label=field_label,
                 option_text=option_text,
             )
+
+    def _build_datasheet_selections(self, mapped_data: dict[str, Any]) -> list[tuple[str, str]]:
+        connection = mapped_data.get("connection") or {}
+
+        selections = [
+            ("Connection", connection.get("name")),
+            ("Size", connection.get("od")),
+            ("Weight", connection.get("weight")),
+            ("Grade", connection.get("grade")),
+            ("Friction", connection.get("friction")),
+            ("Coupling", connection.get("coupling")),
+        ]
+
+        missing = [
+            field_label
+            for field_label, value in selections
+            if value is None or str(value).strip() == ""
+        ]
+
+        if missing:
+            raise ValueError(f"JFE mapped_data missing required fields: {missing}")
+
+        return [(field_label, str(value).strip()) for field_label, value in selections]
 
     def _select_datasheet_dropdown(
         self,
         field_label: str,
         option_text: str,
     ) -> None:
-        select = self._wait_for_select_with_placeholder(
+        select = self._wait_for_select_by_field_label(
             field_label=field_label,
             timeout_ms=30000,
         )
@@ -266,7 +263,7 @@ class JfeAdapter(BaseAdapter):
         except PlaywrightTimeoutError:
             pass
 
-    def _wait_for_select_with_placeholder(
+    def _wait_for_select_by_field_label(
         self,
         field_label: str,
         timeout_ms: int = 30000,
@@ -275,7 +272,7 @@ class JfeAdapter(BaseAdapter):
         interval = 500
 
         while elapsed < timeout_ms:
-            select = self._get_select_by_placeholder(field_label)
+            select = self._get_select_by_field_label(field_label)
             if select is not None:
                 return select
 
@@ -284,37 +281,54 @@ class JfeAdapter(BaseAdapter):
 
         raise RuntimeError(f"JFE select not found for field: {field_label}")
 
-    def _get_select_by_placeholder(self, field_label: str):
-        aliases = self.FIELD_LABEL_ALIASES.get(field_label, [field_label])
-        normalized_aliases = {
-            self._normalize_option_text(alias).upper()
-            for alias in aliases
-        }
+    def _get_select_by_field_label(self, field_label: str):
+        normalized_target = self._normalize_text(field_label).upper()
 
         scope = self._get_left_panel_scope()
-        selects = scope.locator("select")
+        fields = scope.locator(".field")
 
         try:
-            count = selects.count()
+            field_count = fields.count()
         except Exception:
-            count = 0
+            field_count = 0
 
-        for i in range(count):
-            select = selects.nth(i)
+        for i in range(field_count):
+            field = fields.nth(i)
 
             try:
-                if not select.is_visible(timeout=500):
+                if not field.is_visible(timeout=500):
                     continue
             except Exception:
                 continue
 
+            select = field.locator("select").first
+
+            try:
+                if select.count() == 0 or not select.is_visible(timeout=500):
+                    continue
+            except Exception:
+                continue
+
+            # 有些字段选择后会出现 label，例如 Connection / Size / Weight 等
+            label_text = ""
+            try:
+                label = field.locator("label").first
+                if label.count() > 0:
+                    label_text = self._normalize_text(label.text_content(timeout=500))
+            except Exception:
+                label_text = ""
+
+            if label_text.upper() == normalized_target:
+                return select
+
+            # 初始化未选择时，字段名通常在 disabled placeholder option 中
             option_texts = self._get_select_option_texts(select)
             normalized_options = {
-                self._normalize_option_text(text).upper()
+                self._normalize_text(text).upper()
                 for text in option_texts
             }
 
-            if normalized_aliases.intersection(normalized_options):
+            if normalized_target in normalized_options:
                 return select
 
         return None
@@ -347,7 +361,7 @@ class JfeAdapter(BaseAdapter):
         for i in range(count):
             try:
                 raw_text = options.nth(i).text_content(timeout=500)
-                text = self._normalize_option_text(raw_text)
+                text = self._normalize_text(raw_text)
                 if text:
                     texts.append(text)
             except Exception:
@@ -362,9 +376,9 @@ class JfeAdapter(BaseAdapter):
     ) -> str | None:
         options = select.locator("option")
 
-        target_normalized = self._normalize_option_text(target_text)
+        target_normalized = self._normalize_text(target_text)
         target_upper = target_normalized.upper()
-        target_number = self._extract_first_number(target_normalized)
+        target_number = self._extract_first_number_as_float(target_normalized)
 
         best_value = None
         best_score = None
@@ -385,7 +399,7 @@ class JfeAdapter(BaseAdapter):
                     continue
 
                 raw_text = option.text_content(timeout=500)
-                option_text = self._normalize_option_text(raw_text)
+                option_text = self._normalize_text(raw_text)
                 option_upper = option_text.upper()
 
                 if not option_text:
@@ -426,7 +440,7 @@ class JfeAdapter(BaseAdapter):
         if option_upper == target_upper:
             return 10000
 
-        option_number = self._extract_first_number(option_text)
+        option_number = self._extract_first_number_as_float(option_text)
 
         if target_number is not None and option_number is not None:
             if option_number == target_number:
@@ -451,31 +465,158 @@ class JfeAdapter(BaseAdapter):
         self,
         mapped_data: dict[str, Any],
     ) -> dict[str, Any]:
-        right_text = self._get_datasheet_content_text()
+        connection_performance = self._extract_connection_performance()
+
+        drift_extraction = bool(mapped_data.get("drift_extraction"))
+
+        drift = self.NA
+        if drift_extraction:
+            drift = self._extract_drift_diameter()
 
         return {
-            "status": "datasheet_selected",
-            "source": "JFE",
-            "datasheet_url": self.datasheet_url,
-            "blanking_url": self.blanking_url,
-            "mapped_data": mapped_data,
-            "hardcoded_selections": dict(self.DATASHEET_SELECTIONS),
-            "datasheet_content_preview": right_text[:500],
+            "tensile": connection_performance.get("tensile"),
+            "compression": connection_performance.get("compression"),
+            "burst": connection_performance.get("burst"),
+            "collapse": connection_performance.get("collapse"),
+            "od": {},
+            "id": {},
+            "external_length": None,
+            "internal_length": None,
+            "drift": drift,
         }
 
-    def _get_datasheet_content_text(self) -> str:
-        try:
-            page = self.page.locator("#datasheet_page").first
-            text = page.inner_text(timeout=5000)
-            return self._normalize_option_text(text)
-        except Exception:
-            return ""
+    def _extract_connection_performance(self) -> dict[str, str | None]:
+        return {
+            "tensile": self._extract_first_number_from_table_field(
+                identifier="CONNECTION PERFORMANCE",
+                field_label="Joint Strength",
+            ),
+            "compression": self._extract_first_number_from_table_field(
+                identifier="CONNECTION PERFORMANCE",
+                field_label="Compression Rating",
+            ),
+            "burst": self._extract_first_number_from_table_field(
+                identifier="CONNECTION PERFORMANCE",
+                field_label="Internal Yield Pressure",
+            ),
+            "collapse": self._extract_first_number_from_table_field(
+                identifier="CONNECTION PERFORMANCE",
+                field_label="Collapse Pressure",
+            ),
+        }
+
+    def _extract_drift_diameter(self) -> str | None:
+        return self._extract_first_number_from_table_field(
+            identifier="PIPE",
+            field_label="Drift Diameter",
+        )
+
+    def _extract_first_number_from_table_field(
+        self,
+        identifier: str,
+        field_label: str,
+    ) -> str | None:
+        raw_value = self._extract_table_field_value(
+            identifier=identifier,
+            field_label=field_label,
+        )
+
+        if raw_value is None:
+            raise RuntimeError(
+                f"Could not extract JFE field. "
+                f"identifier=[{identifier}], field_label=[{field_label}]"
+            )
+
+        value = self._extract_first_number(raw_value)
+        if value is None:
+            raise RuntimeError(
+                f"Could not extract numeric value from JFE field. "
+                f"identifier=[{identifier}], field_label=[{field_label}], raw_value=[{raw_value}]"
+            )
+
+        return value
+
+    def _extract_table_field_value(
+        self,
+        identifier: str,
+        field_label: str,
+    ) -> str | None:
+        return self.page.evaluate(
+            """
+            ({ identifier, fieldLabel }) => {
+                const normalize = (text) => {
+                    return (text || "")
+                        .replace(/\\s+/g, " ")
+                        .trim()
+                        .toLowerCase();
+                };
+
+                const identifierTarget = normalize(identifier);
+                const fieldTarget = normalize(fieldLabel);
+
+                const tbodies = Array.from(
+                    document.querySelectorAll("#datasheet_page tbody")
+                );
+
+                const targetTbody = tbodies.find((tbody) => {
+                    const identifierEl = tbody.querySelector(".identifier");
+                    if (!identifierEl) return false;
+
+                    const identifierText = normalize(identifierEl.innerText);
+                    return identifierText.includes(identifierTarget);
+                });
+
+                if (!targetTbody) {
+                    return null;
+                }
+
+                const rows = Array.from(targetTbody.querySelectorAll("tr"));
+
+                for (const row of rows) {
+                    const rowStyle = window.getComputedStyle(row);
+                    if (rowStyle.display === "none") {
+                        continue;
+                    }
+
+                    const cells = Array.from(row.querySelectorAll("td"));
+
+                    for (let i = 0; i < cells.length; i++) {
+                        const cell = cells[i];
+
+                        if (cell.classList.contains("identifier")) {
+                            continue;
+                        }
+
+                        const cellText = normalize(cell.innerText);
+
+                        if (cellText === fieldTarget || cellText.includes(fieldTarget)) {
+                            for (let j = i + 1; j < cells.length; j++) {
+                                const valueText = (cells[j].innerText || "")
+                                    .replace(/\\s+/g, " ")
+                                    .trim();
+
+                                if (valueText) {
+                                    return valueText;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return null;
+            }
+            """,
+            {
+                "identifier": identifier,
+                "fieldLabel": field_label,
+            },
+        )
 
     # ------------------------------------------------------------------
     # Text helpers
     # ------------------------------------------------------------------
 
-    def _normalize_option_text(self, text: str | None) -> str:
+    def _normalize_text(self, text: str | None) -> str:
         if not text:
             return ""
 
@@ -485,21 +626,28 @@ class JfeAdapter(BaseAdapter):
         return text.strip()
 
     def _normalize_for_contains(self, text: str) -> str:
-        text = self._normalize_option_text(text)
+        text = self._normalize_text(text)
         text = text.replace(" ", "")
         text = text.replace("-", "")
         text = text.replace("_", "")
         return text.upper()
 
-    def _extract_first_number(self, text: str | None) -> float | None:
+    def _extract_first_number(self, text: str | None) -> str | None:
         if not text:
             return None
 
-        match = re.search(r"[-+]?\d+(?:\.\d+)?", text.replace(",", ""))
+        match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", text.replace(",", ""))
         if not match:
             return None
 
+        return match.group(0)
+
+    def _extract_first_number_as_float(self, text: str | None) -> float | None:
+        value = self._extract_first_number(text)
+        if value is None:
+            return None
+
         try:
-            return float(match.group(0))
+            return float(value)
         except ValueError:
             return None

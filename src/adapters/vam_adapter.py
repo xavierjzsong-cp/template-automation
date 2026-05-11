@@ -616,7 +616,7 @@ class VamAdapter(BaseAdapter):
         }
         if drift_extraction:
             drift_size = {
-                "drift": self._extract_drift_from_pipe_body_properties(cds_page),
+                "drift": self._extract_drift_size(cds_page),
             }
 
         joint_performances = self._extract_joint_performances(cds_page)
@@ -692,7 +692,7 @@ class VamAdapter(BaseAdapter):
             ),
         }
 
-    def _extract_drift_from_pipe_body_properties(self, cds_page: Page) -> str | None:
+    def _extract_drift_size(self, cds_page: Page) -> str | None:
         rows = cds_page.locator("[data-cy^='cds-card-data']")
 
         try:
