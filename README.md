@@ -11,7 +11,6 @@ writer：执行自动化写入template的操作
 2. pots_doc_parser - 三个 coating 也可以根据从 pots doc 中提取（提取规则）然后对照映射表（需建立）
 3. vam_mapper - 还有 MF（映射表需要设计）、Grade（暂不考虑）匹配逻辑没有实现
 4. jfe_adapter - 目前可以先 hardcode 数据来实现 JFE 网页的提取
-5. tsh_adapter - 需要修改 Drift 的提取位置：由 blanking 改为 datasheet
 
 
 待解决：

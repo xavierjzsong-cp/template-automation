@@ -17,9 +17,14 @@ from src.utils import ensure_dir, setup_logger
 
 
 # --------------------------------------------------------------------------------------------------------------------------
-# 当前版本实现 datasheet_generator 页面：
-# 打开页面 → 根据 mapped_data 按顺序选择 6 个字段
-# → 抓取 Joint Strength、Compression Rating、Internal Yield Pressure、Collapse Pressure、Drift Diameter
+# 当前版本实现：
+# 1. datasheet_generator 页面：
+#    打开页面 → 根据 mapped_data 按顺序选择 6 个字段
+#    → 抓取 Joint Strength、Compression Rating、Internal Yield Pressure、Collapse Pressure、Drift Diameter
+#
+# 2. blanking_dimensions 页面：
+#    打开页面 → 根据 mapped_data 按顺序选择 4 个字段
+#    → 根据 PIN / BOX 抓取 OD、ID，返回 nominal + tol_1 + tol_2 结构
 # --------------------------------------------------------------------------------------------------------------------------
 
 
@@ -47,7 +52,7 @@ class JfeAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "jfe_adapter_v2.2")
+        self.logger = setup_logger(self.logs_dir, "jfe_adapter_v2.4")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
@@ -71,15 +76,36 @@ class JfeAdapter(BaseAdapter):
         self.logger.info("Starting JFE extraction flow")
         self.logger.info("Mapped data: %s", mapped_data)
 
+        connection = mapped_data.get("connection") or {}
+        connection_type = (connection.get("type") or "").upper()
+
+        if connection_type not in {"BOX", "PIN"}:
+            raise ValueError(f"JFE mapped_data has unsupported connection.type: {connection_type}")
+
+        # Datasheet flow
         self.open_datasheet_page()
         self._wait_for_datasheet_page_loaded()
 
         self._select_datasheet_options(mapped_data)
         self._wait_for_datasheet_result_loaded()
 
-        return self.extract_required_data(
+        datasheet_result = self.extract_required_data(
             mapped_data=mapped_data,
         )
+
+        # Blanking Dimensions flow
+        self.open_blanking_page()
+        self._wait_for_blanking_page_loaded()
+
+        self._select_blanking_options(mapped_data)
+        self._wait_for_blanking_dimensions_loaded()
+
+        blanking_result = self._extract_blanking_dimensions(connection_type)
+
+        return {
+            **datasheet_result,
+            **blanking_result,
+        }
 
     # ------------------------------------------------------------------
     # Page open
@@ -97,6 +123,16 @@ class JfeAdapter(BaseAdapter):
             "Opening JFE blanking dimensions page: %s",
             self.blanking_url,
         )
+
+        try:
+            self.page.close()
+        except Exception:
+            pass
+
+        self.page = self.context.new_page()
+        self.page.set_default_timeout(self.timeout_ms)
+        self.page.set_default_navigation_timeout(self.navigation_timeout_ms)
+
         self._goto_page(self.blanking_url)
 
     def _goto_page(self, url: str) -> None:
@@ -150,24 +186,40 @@ class JfeAdapter(BaseAdapter):
         self._wait_for_loading_overlay_hidden()
 
     def _wait_for_blanking_page_loaded(self) -> None:
-        self.page.wait_for_timeout(1000)
+        self._wait_for_loading_overlay_hidden()
+
+        self.page.locator("#datasheet_builder").wait_for(
+            state="visible",
+            timeout=30000,
+        )
+
+        # Blanking 页面固定有 4 个下拉框：
+        # Connection, Size, Weight, Coupling Type
+        self.page.locator("#datasheet_builder select").nth(3).wait_for(
+            state="visible",
+            timeout=30000,
+        )
+
+        self._wait_for_loading_overlay_hidden()
 
     def _wait_for_loading_overlay_hidden(self) -> None:
         try:
             self.page.wait_for_function(
                 """
                 () => {
-                    const overlay = document.querySelector(
-                        "#datasheet_builder .loading-overlay"
+                    const overlays = Array.from(
+                        document.querySelectorAll(".loading-overlay")
                     );
 
-                    if (!overlay) return true;
+                    if (overlays.length === 0) return true;
 
-                    const style = window.getComputedStyle(overlay);
+                    return overlays.every((overlay) => {
+                        const style = window.getComputedStyle(overlay);
 
-                    return style.display === "none"
-                        || style.visibility === "hidden"
-                        || !overlay.classList.contains("is-active");
+                        return style.display === "none"
+                            || style.visibility === "hidden"
+                            || !overlay.classList.contains("is-active");
+                    });
                 }
                 """,
                 timeout=15000,
@@ -193,6 +245,25 @@ class JfeAdapter(BaseAdapter):
             timeout=30000,
         )
 
+    def _wait_for_blanking_dimensions_loaded(self) -> None:
+        self._wait_for_loading_overlay_hidden()
+
+        self.page.wait_for_function(
+            """
+            () => {
+                const wrapper = document.querySelector("#blanking_dimensions_wrapper");
+                if (!wrapper) return false;
+
+                return Boolean(
+                    wrapper.querySelector("#pin_boring")
+                    && wrapper.querySelector("#box_boring")
+                    && wrapper.querySelector("#turning_diameter")
+                );
+            }
+            """,
+            timeout=30000,
+        )
+
     # ------------------------------------------------------------------
     # Datasheet selections
     # ------------------------------------------------------------------
@@ -201,7 +272,7 @@ class JfeAdapter(BaseAdapter):
         selections = self._build_datasheet_selections(mapped_data)
 
         for field_label, option_text in selections:
-            self._select_datasheet_dropdown(
+            self._select_dropdown_by_field_label(
                 field_label=field_label,
                 option_text=option_text,
             )
@@ -225,11 +296,49 @@ class JfeAdapter(BaseAdapter):
         ]
 
         if missing:
-            raise ValueError(f"JFE mapped_data missing required fields: {missing}")
+            raise ValueError(f"JFE mapped_data missing required datasheet fields: {missing}")
 
         return [(field_label, str(value).strip()) for field_label, value in selections]
 
-    def _select_datasheet_dropdown(
+    # ------------------------------------------------------------------
+    # Blanking selections
+    # ------------------------------------------------------------------
+
+    def _select_blanking_options(self, mapped_data: dict[str, Any]) -> None:
+        selections = self._build_blanking_selections(mapped_data)
+
+        for field_label, option_text in selections:
+            self._select_dropdown_by_field_label(
+                field_label=field_label,
+                option_text=option_text,
+            )
+
+    def _build_blanking_selections(self, mapped_data: dict[str, Any]) -> list[tuple[str, str]]:
+        connection = mapped_data.get("connection") or {}
+
+        selections = [
+            ("Connection", connection.get("name")),
+            ("Size", connection.get("od")),
+            ("Weight", connection.get("weight")),
+            ("Coupling Type", connection.get("coupling")),
+        ]
+
+        missing = [
+            field_label
+            for field_label, value in selections
+            if value is None or str(value).strip() == ""
+        ]
+
+        if missing:
+            raise ValueError(f"JFE mapped_data missing required blanking fields: {missing}")
+
+        return [(field_label, str(value).strip()) for field_label, value in selections]
+
+    # ------------------------------------------------------------------
+    # Generic select helpers
+    # ------------------------------------------------------------------
+
+    def _select_dropdown_by_field_label(
         self,
         field_label: str,
         option_text: str,
@@ -284,7 +393,7 @@ class JfeAdapter(BaseAdapter):
     def _get_select_by_field_label(self, field_label: str):
         normalized_target = self._normalize_text(field_label).upper()
 
-        scope = self._get_left_panel_scope()
+        scope = self._get_builder_scope()
         fields = scope.locator(".field")
 
         try:
@@ -309,7 +418,6 @@ class JfeAdapter(BaseAdapter):
             except Exception:
                 continue
 
-            # 有些字段选择后会出现 label，例如 Connection / Size / Weight 等
             label_text = ""
             try:
                 label = field.locator("label").first
@@ -321,7 +429,6 @@ class JfeAdapter(BaseAdapter):
             if label_text.upper() == normalized_target:
                 return select
 
-            # 初始化未选择时，字段名通常在 disabled placeholder option 中
             option_texts = self._get_select_option_texts(select)
             normalized_options = {
                 self._normalize_text(text).upper()
@@ -333,7 +440,7 @@ class JfeAdapter(BaseAdapter):
 
         return None
 
-    def _get_left_panel_scope(self):
+    def _get_builder_scope(self):
         candidates = [
             self.page.locator("#datasheet_builder .left_col").first,
             self.page.locator("#datasheet_builder").first,
@@ -347,7 +454,7 @@ class JfeAdapter(BaseAdapter):
             except Exception:
                 continue
 
-        raise RuntimeError("Could not find JFE left panel scope.")
+        raise RuntimeError("Could not find JFE builder scope.")
 
     def _get_select_option_texts(self, select) -> list[str]:
         options = select.locator("option")
@@ -478,10 +585,6 @@ class JfeAdapter(BaseAdapter):
             "compression": connection_performance.get("compression"),
             "burst": connection_performance.get("burst"),
             "collapse": connection_performance.get("collapse"),
-            "od": {},
-            "id": {},
-            "external_length": None,
-            "internal_length": None,
             "drift": drift,
         }
 
@@ -611,6 +714,119 @@ class JfeAdapter(BaseAdapter):
                 "fieldLabel": field_label,
             },
         )
+
+    # ------------------------------------------------------------------
+    # Blanking extraction
+    # ------------------------------------------------------------------
+
+    def _extract_blanking_dimensions(self, connection_type: str) -> dict[str, Any]:
+        return {
+            "od": self._extract_blanking_od(connection_type),
+            "id": self._extract_blanking_id(connection_type),
+            "external_length": None,
+            "internal_length": None,
+        }
+
+    def _extract_blanking_id(self, connection_type: str) -> dict[str, str]:
+        selector = "#pin_boring" if connection_type == "PIN" else "#box_boring"
+
+        raw_data = self.page.evaluate(
+            """
+            (selector) => {
+                const root = document.querySelector(selector);
+                if (!root) return null;
+
+                const top = root.querySelector(".top");
+                const columns = Array.from(root.querySelectorAll(".columns .column"));
+
+                return {
+                    nominal: top ? top.innerText : null,
+                    tolerances: columns.map(col => col.innerText || "")
+                };
+            }
+            """,
+            selector,
+        )
+
+        if not raw_data:
+            raise RuntimeError(f"Could not find JFE blanking ID section: {selector}")
+
+        return self._build_nominal_tolerance_dimension(
+            raw_data=raw_data,
+            field_name=f"JFE blanking ID {connection_type}",
+        )
+
+    def _extract_blanking_od(self, connection_type: str) -> dict[str, str]:
+        raw_data = self.page.evaluate(
+            """
+            (connectionType) => {
+                const root = document.querySelector("#turning_diameter");
+                if (!root) return null;
+
+                const topColumns = Array.from(
+                    root.querySelectorAll(".top .columns .column")
+                );
+
+                const toleranceColumns = Array.from(
+                    root.querySelectorAll(":scope > .columns .column")
+                );
+
+                const isPin = connectionType === "PIN";
+
+                const nominalText = isPin
+                    ? (topColumns[0] ? topColumns[0].innerText : null)
+                    : (topColumns[1] ? topColumns[1].innerText : null);
+
+                const toleranceTexts = isPin
+                    ? toleranceColumns.slice(0, 2).map(col => col.innerText || "")
+                    : toleranceColumns.slice(2, 4).map(col => col.innerText || "");
+
+                return {
+                    nominal: nominalText,
+                    tolerances: toleranceTexts
+                };
+            }
+            """,
+            connection_type,
+        )
+
+        if not raw_data:
+            raise RuntimeError("Could not find JFE blanking OD section: #turning_diameter")
+
+        return self._build_nominal_tolerance_dimension(
+            raw_data=raw_data,
+            field_name=f"JFE blanking OD {connection_type}",
+        )
+
+    def _build_nominal_tolerance_dimension(
+        self,
+        raw_data: dict[str, Any],
+        field_name: str,
+    ) -> dict[str, str]:
+        nominal = self._extract_first_number(raw_data.get("nominal"))
+
+        tolerances = [
+            self._extract_first_number(text)
+            for text in raw_data.get("tolerances", [])
+        ]
+        tolerances = [value for value in tolerances if value is not None]
+
+        if nominal is None or len(tolerances) < 2:
+            raise RuntimeError(
+                f"Invalid {field_name} data. raw_data={raw_data}"
+            )
+
+        return {
+            "nominal": self._format_nominal(nominal),
+            "tol_1": tolerances[0],
+            "tol_2": tolerances[1],
+        }
+
+    def _format_nominal(self, value: str) -> str:
+        try:
+            return f"{float(value.replace(',', '').strip()):.3f}"
+        except ValueError:
+            return value.strip()
 
     # ------------------------------------------------------------------
     # Text helpers
