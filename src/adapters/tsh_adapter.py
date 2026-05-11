@@ -12,7 +12,7 @@ from playwright.sync_api import (
     TimeoutError as PlaywrightTimeoutError,
 )
 
-from src.site_adapters.base_adapter import BaseAdapter
+from src.adapters.base_adapter import BaseAdapter
 from src.utils import ensure_dir, setup_logger
 
 
