@@ -25,7 +25,7 @@ class TshMapper(BaseMapper):
             "side": target.get("side"),
             "drift_extraction": bool(shared_data.get("drift_extraction")),
             "connection": {
-                "name": self._map_connection_name(connection.get("name")),
+                "name": connection.get("name"),
                 "od": self._map_od(connection.get("od")),
                 "weight": self._map_weight(connection.get("weight")),
                 "material_family": self._map_material_family(product_material_grade),
@@ -33,16 +33,6 @@ class TshMapper(BaseMapper):
                 "type": connection.get("type"),
             },
         }
-
-    def _map_connection_name(self, name: str | None) -> str | None:
-        if not name:
-            return None
-
-        text = name.strip()
-        if text.upper().startswith("TSH "):
-            text = text[4:].strip()
-
-        return text
 
     def _map_od(self, od: str | None) -> str | None:
         if not od:

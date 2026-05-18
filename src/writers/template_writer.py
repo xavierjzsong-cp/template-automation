@@ -58,13 +58,17 @@ class TemplateWriter:
         top_thread_text = self._format_thread(
             od=upper.get("od"),
             weight=upper.get("weight"),
+            family=upper.get("family"),
             connection_name=upper.get("name"),
+            connection_type=upper.get("type"),
         )
 
         bottom_thread_text = self._format_thread(
             od=lower.get("od"),
             weight=lower.get("weight"),
+            family=lower.get("family"),
             connection_name=lower.get("name"),
+            connection_type=lower.get("type"),
         )
 
         material = self._format_material(
@@ -100,17 +104,63 @@ class TemplateWriter:
         self,
         od: str | None,
         weight: str | None,
+        family: str | None,
         connection_name: str | None,
+        connection_type: str | None,
     ) -> str | None:
-        if not od or not weight or not connection_name:
+        if not od or not weight or not connection_name or not connection_type:
             return None
 
+        connection_label = self._format_connection_label(
+            family=family,
+            connection_name=connection_name,
+            connection_type=connection_type,
+        )
+
+        if not connection_label:
+            return None
+
+        return f"{od} - {weight}# {connection_label}"
+
+    def _format_connection_label(
+        self,
+        family: str | None,
+        connection_name: str | None,
+        connection_type: str | None,
+    ) -> str | None:
+        if not connection_name or not connection_type:
+            return None
+
+        normalized_family = self._normalize_connection_family(family)
         normalized_name = self._normalize_connection_name(connection_name)
-        return f"{od} - {weight}# {normalized_name}"
+        normalized_type = connection_type.strip().upper()
+
+        parts: list[str] = []
+
+        if normalized_family and normalized_family != "HT":
+            parts.append(normalized_family)
+
+        if normalized_name:
+            parts.append(normalized_name)
+
+        parts.append(normalized_type)
+
+        return " ".join(parts)
+
+    def _normalize_connection_family(self, family: str | None) -> str | None:
+        if not family:
+            return None
+
+        text = family.strip().upper()
+        return text if text else None
 
     def _normalize_connection_name(self, connection_name: str) -> str:
         text = connection_name.strip()
-        text = re.sub(r"\bWEDGE\s+511\b", "W511", text, flags=re.IGNORECASE)
+
+        text = re.sub(r"\bWEDGE\b", "W", text, flags=re.IGNORECASE)
+
+        text = re.sub(r"\bW\s+(\d+)\b", r"W\1", text, flags=re.IGNORECASE)
+
         text = re.sub(r"\s+", " ", text).strip()
         return text
 

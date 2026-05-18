@@ -11,8 +11,6 @@ writer：执行自动化写入template的操作
 2. pots_doc_parser - 三个 coating 也可以根据从 pots doc 中提取（提取规则）然后对照映射表（需建立）
 3. vam_mapper - 还有 MF（映射表需要设计）、Grade（暂不考虑）匹配逻辑没有实现
 4. jfe_adapter - 目前通过 hardcode 数据了实现 JFE 网页的提取（还差 EL & IL）
-5. pots_doc_parser - 从 description 中提取字段的逻辑需要修改，不能只是根据，分割出的位置来决定字段
-6. pots_doc_parser - product_material_grade 添加一个也可以从 Product Material Grade 单元格来提取的逻辑，防止 description 中没有提及
 
 
 待解决：
