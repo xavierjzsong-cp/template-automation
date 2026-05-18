@@ -17,7 +17,7 @@ from src.writers.template_writer import TemplateWriter
 from src.adapters.jfe_adapter import JfeAdapter
 
 
-
+"""
 # 测试整个流程
 def load_partners_config(config_path: Path) -> dict[str, Any]:
     if not config_path.exists():
@@ -362,7 +362,7 @@ def main() -> None:
         raise AssertionError("Expected drift value, but got empty or NA")
 
     print("\nJFE adapter test passed.")
-"""
+
 
 if __name__ == "__main__":
     main()
