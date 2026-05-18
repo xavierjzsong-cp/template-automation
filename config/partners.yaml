@@ -47,16 +47,16 @@ partners:
       supports_blanking_dimensions: true
       requires_login: false
 
-  SLHT:
-    display_name: "SLHT (Seal-Lock)"
+  HT:
+    display_name: "SLHT"
     company_name: "Hunting PLC"
-    adapter: "slht_adapter"
+    adapter: "ht_adapter"
     enabled: true
 
     urls:
       homepage: "https://huntingplc.com/products-services/connection-technology-octg/seal-lock-ht/"
-      connection_datasheet: null
-      blanking_dimensions: null
+      connection_datasheet: "https://datasheet.hunting-intl.com/CommercialDatasheets"
+      blanking_dimensions: "https://datasheet.hunting-intl.com/BlankingSheets/GenerateReport/59436?measurementUnit=English"
 
     capabilities:
       supports_connection_datasheet: true

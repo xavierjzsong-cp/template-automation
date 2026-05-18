@@ -259,7 +259,7 @@ def main() -> None:
     print("\nFull flow test passed.")
 """
 
-# test JFE
+# test JFE flow
 def load_partners_config(config_path: Path) -> dict[str, Any]:
     if not config_path.exists():
         raise FileNotFoundError(f"partners.yaml not found: {config_path}")
@@ -307,7 +307,7 @@ def main() -> None:
     if not blanking_url:
         raise ValueError("JFE config missing urls.blanking_dimensions")
 
-    # 模拟最终 JFE mapper 输出
+    # 模拟 JFE mapper 输出
     mapped_data = {
         "partner": "JFE",
         "side": "upper",
