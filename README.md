@@ -14,7 +14,7 @@ writer：执行自动化写入template的操作
 
 
 待解决：
-1. Material Family 如何做映射 ？（VAM中：Carbon Steel / Deep well / NA ）
+1. Vam 中 Material Family 如何做映射 ？（VAM中：Carbon Steel / Deep well / NA ）
 2. coating 如何做映射 ？（什么情况下选择哪种 feature）
 3. 如果有必要，JFE / SLHT 网页中的 Material Famlily 又是如何映射的 ？
 
