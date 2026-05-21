@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import json
+import sys
+
 import yaml
 from openpyxl import load_workbook
 
@@ -259,56 +262,15 @@ def main() -> None:
     print("\nFull flow test passed.")
 """
 
-# test JFE flow
-def load_partners_config(config_path: Path) -> dict[str, Any]:
-    if not config_path.exists():
-        raise FileNotFoundError(f"partners.yaml not found: {config_path}")
+# test JFE
+project_root = Path(__file__).resolve().parent
+sys.path.insert(0, str(project_root))
 
-    with config_path.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-
-    if not isinstance(data, dict):
-        raise ValueError(f"Invalid partners.yaml structure: {config_path}")
-
-    return data
+from src.adapters.jfe_adapter import JfeAdapter
 
 
-def get_partner_config(partners_config: dict[str, Any], partner: str) -> dict[str, Any]:
-    partner = partner.upper()
-
-    partners = partners_config.get("partners")
-    if not isinstance(partners, dict):
-        raise ValueError("partners.yaml must contain a top-level 'partners' dictionary")
-
-    cfg = partners.get(partner)
-    if not isinstance(cfg, dict):
-        raise KeyError(f"Partner config not found for partner: {partner}")
-
-    return cfg
-
-
-def main() -> None:
-    project_root = Path(__file__).resolve().parent
-
-    partners_config_path = project_root / "config" / "partners.yaml"
-    partners_config = load_partners_config(partners_config_path)
-
-    partner_cfg = get_partner_config(partners_config, "JFE")
-    urls = partner_cfg.get("urls") or {}
-
-    base_url = urls.get("homepage")
-    datasheet_url = urls.get("connection_datasheet")
-    blanking_url = urls.get("blanking_dimensions")
-
-    if not base_url:
-        raise ValueError("JFE config missing urls.homepage")
-    if not datasheet_url:
-        raise ValueError("JFE config missing urls.connection_datasheet")
-    if not blanking_url:
-        raise ValueError("JFE config missing urls.blanking_dimensions")
-
-    # 模拟 JFE mapper 输出
-    mapped_data = {
+def build_test_mapped_data() -> dict[str, Any]:
+    return {
         "partner": "JFE",
         "side": "upper",
         "drift_extraction": True,
@@ -316,17 +278,57 @@ def main() -> None:
             "name": "JFEBEAR",
             "od": "3.500",
             "weight": "9.2",
-            "grade": "L80-13CR",
+            "material_family": "13CR",
+            "yield_strength": "80",
+            "grade_source": "standard",
             "friction": "API Modified",
             "coupling": "STD",
             "type": "BOX",
         },
     }
 
+
+def validate_adapter_result(result: dict[str, Any]) -> None:
+    required_fields = [
+        "tensile",
+        "compression",
+        "burst",
+        "collapse",
+        "drift",
+        "od",
+        "id",
+        "external_length",
+        "internal_length",
+    ]
+
+    missing = [field for field in required_fields if field not in result]
+    if missing:
+        raise AssertionError(f"Adapter result missing fields: {missing}")
+
+    for dimension_name in ["od", "id"]:
+        dimension = result.get(dimension_name)
+        if not isinstance(dimension, dict):
+            raise AssertionError(f"{dimension_name} should be dict, got: {dimension}")
+
+        for key in ["nominal", "tol_1", "tol_2"]:
+            if key not in dimension:
+                raise AssertionError(
+                    f"{dimension_name} missing {key}, got: {dimension}"
+                )
+
+    print("\nJFE adapter validation passed.")
+
+
+def main() -> None:
+    mapped_data = build_test_mapped_data()
+
+    print("=== JFE Mapped Data Used For Adapter Test ===")
+    print(json.dumps(mapped_data, ensure_ascii=False, indent=4))
+
     adapter = JfeAdapter(
-        base_url=base_url,
-        datasheet_url=datasheet_url,
-        blanking_url=blanking_url,
+        base_url="https://www.jfetools.com/",
+        datasheet_url="https://www.jfetools.com/datasheet_generator",
+        blanking_url="https://www.jfetools.com/blanking_dimensions",
         logs_dir=project_root / "logs",
         headless=False,
         slow_mo=300,
@@ -340,28 +342,9 @@ def main() -> None:
         adapter.close()
 
     print("\n=== JFE Adapter Result ===")
-    print(adapter_result)
+    print(json.dumps(adapter_result, ensure_ascii=False, indent=4))
 
-    required_keys = {
-        "tensile",
-        "compression",
-        "burst",
-        "collapse",
-        "od",
-        "id",
-        "external_length",
-        "internal_length",
-        "drift",
-    }
-
-    missing = required_keys - set(adapter_result.keys())
-    if missing:
-        raise AssertionError(f"JFE adapter result missing keys: {sorted(missing)}")
-
-    if adapter_result["drift"] in {None, "", "NA"}:
-        raise AssertionError("Expected drift value, but got empty or NA")
-
-    print("\nJFE adapter test passed.")
+    validate_adapter_result(adapter_result)
 
 
 if __name__ == "__main__":

@@ -25,6 +25,11 @@ from src.utils import ensure_dir, setup_logger
 # 2. blanking_dimensions 页面：
 #    打开页面 → 根据 mapped_data 按顺序选择 4 个字段
 #    → 根据 PIN / BOX 抓取 OD、ID，返回 nominal + tol_1 + tol_2 结构
+#    → 根据 PIN / BOX 抓取 turning length，作为 external_length 和 internal_length 返回
+#
+# 3. Grade 选择：
+#    新版 JfeMapper 输出 material_family / yield_strength / grade_source。
+#    Adapter 根据 grade_source 判断匹配 standard grade 还是 JFE 自有 grade。
 # --------------------------------------------------------------------------------------------------------------------------
 
 
@@ -52,7 +57,7 @@ class JfeAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "jfe_adapter_v2.4")
+        self.logger = setup_logger(self.logs_dir, "jfe_adapter_v2.6")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
@@ -107,10 +112,6 @@ class JfeAdapter(BaseAdapter):
             **blanking_result,
         }
 
-    # ------------------------------------------------------------------
-    # Page open
-    # ------------------------------------------------------------------
-
     def open_datasheet_page(self) -> None:
         self.logger.info(
             "Opening JFE connection datasheet page: %s",
@@ -158,10 +159,6 @@ class JfeAdapter(BaseAdapter):
         except PlaywrightTimeoutError:
             pass
 
-    # ------------------------------------------------------------------
-    # Page readiness checks
-    # ------------------------------------------------------------------
-
     def _wait_for_datasheet_page_loaded(self) -> None:
         self.page.wait_for_function(
             """
@@ -193,8 +190,6 @@ class JfeAdapter(BaseAdapter):
             timeout=30000,
         )
 
-        # Blanking 页面固定有 4 个下拉框：
-        # Connection, Size, Weight, Coupling Type
         self.page.locator("#datasheet_builder select").nth(3).wait_for(
             state="visible",
             timeout=30000,
@@ -264,10 +259,6 @@ class JfeAdapter(BaseAdapter):
             timeout=30000,
         )
 
-    # ------------------------------------------------------------------
-    # Datasheet selections
-    # ------------------------------------------------------------------
-
     def _select_datasheet_options(self, mapped_data: dict[str, Any]) -> None:
         selections = self._build_datasheet_selections(mapped_data)
 
@@ -280,11 +271,13 @@ class JfeAdapter(BaseAdapter):
     def _build_datasheet_selections(self, mapped_data: dict[str, Any]) -> list[tuple[str, str]]:
         connection = mapped_data.get("connection") or {}
 
+        grade = self._build_grade_option_text(connection)
+
         selections = [
             ("Connection", connection.get("name")),
             ("Size", connection.get("od")),
             ("Weight", connection.get("weight")),
-            ("Grade", connection.get("grade")),
+            ("Grade", grade),
             ("Friction", connection.get("friction")),
             ("Coupling", connection.get("coupling")),
         ]
@@ -300,9 +293,50 @@ class JfeAdapter(BaseAdapter):
 
         return [(field_label, str(value).strip()) for field_label, value in selections]
 
-    # ------------------------------------------------------------------
-    # Blanking selections
-    # ------------------------------------------------------------------
+    def _build_grade_option_text(self, connection: dict[str, Any]) -> str | None:
+        material_family = connection.get("material_family")
+        yield_strength = connection.get("yield_strength")
+        grade_source = (connection.get("grade_source") or "standard").strip().lower()
+
+        if not material_family or not yield_strength:
+            return None
+
+        family = str(material_family).strip().upper()
+        strength = str(yield_strength).strip()
+
+        if grade_source == "jfe":
+            return self._build_jfe_grade(
+                material_family=family,
+                yield_strength=strength,
+            )
+
+        return self._build_standard_grade(
+            material_family=family,
+            yield_strength=strength,
+        )
+
+    def _build_standard_grade(
+        self,
+        material_family: str,
+        yield_strength: str,
+    ) -> str:
+        family = material_family.strip().upper()
+        strength = yield_strength.strip()
+
+        if family == "13CR":
+            return f"L{strength}-13CR"
+
+        return f"{family}-{strength}"
+
+    def _build_jfe_grade(
+        self,
+        material_family: str,
+        yield_strength: str,
+    ) -> str:
+        family = material_family.strip().upper()
+        strength = yield_strength.strip()
+
+        return f"JFE-{family}-{strength}"
 
     def _select_blanking_options(self, mapped_data: dict[str, Any]) -> None:
         selections = self._build_blanking_selections(mapped_data)
@@ -334,10 +368,6 @@ class JfeAdapter(BaseAdapter):
 
         return [(field_label, str(value).strip()) for field_label, value in selections]
 
-    # ------------------------------------------------------------------
-    # Generic select helpers
-    # ------------------------------------------------------------------
-
     def _select_dropdown_by_field_label(
         self,
         field_label: str,
@@ -351,6 +381,7 @@ class JfeAdapter(BaseAdapter):
         matched_value = self._find_option_value_by_text(
             select=select,
             target_text=option_text,
+            field_label=field_label,
         )
 
         if matched_value is None:
@@ -480,12 +511,14 @@ class JfeAdapter(BaseAdapter):
         self,
         select,
         target_text: str,
+        field_label: str,
     ) -> str | None:
         options = select.locator("option")
 
         target_normalized = self._normalize_text(target_text)
         target_upper = target_normalized.upper()
         target_number = self._extract_first_number_as_float(target_normalized)
+        match_mode = self._get_match_mode_for_field(field_label)
 
         best_value = None
         best_score = None
@@ -518,6 +551,7 @@ class JfeAdapter(BaseAdapter):
                     target_text=target_normalized,
                     target_upper=target_upper,
                     target_number=target_number,
+                    match_mode=match_mode,
                 )
 
                 if score is None:
@@ -536,7 +570,51 @@ class JfeAdapter(BaseAdapter):
 
         return best_value
 
+    def _get_match_mode_for_field(self, field_label: str) -> str:
+        normalized = field_label.strip().upper()
+
+        if normalized in {"SIZE", "WEIGHT"}:
+            return "numeric"
+
+        if normalized == "GRADE":
+            return "grade"
+
+        return "text"
+
     def _score_option_match(
+        self,
+        option_text: str,
+        option_upper: str,
+        target_text: str,
+        target_upper: str,
+        target_number: float | None,
+        match_mode: str,
+    ) -> int | None:
+        if match_mode == "numeric":
+            return self._score_numeric_option_match(
+                option_text=option_text,
+                option_upper=option_upper,
+                target_text=target_text,
+                target_upper=target_upper,
+                target_number=target_number,
+            )
+
+        if match_mode == "grade":
+            return self._score_grade_option_match(
+                option_text=option_text,
+                option_upper=option_upper,
+                target_text=target_text,
+                target_upper=target_upper,
+            )
+
+        return self._score_text_option_match(
+            option_text=option_text,
+            option_upper=option_upper,
+            target_text=target_text,
+            target_upper=target_upper,
+        )
+
+    def _score_numeric_option_match(
         self,
         option_text: str,
         option_upper: str,
@@ -564,9 +642,50 @@ class JfeAdapter(BaseAdapter):
 
         return None
 
-    # ------------------------------------------------------------------
-    # Extraction entry
-    # ------------------------------------------------------------------
+    def _score_grade_option_match(
+        self,
+        option_text: str,
+        option_upper: str,
+        target_text: str,
+        target_upper: str,
+    ) -> int | None:
+        if option_upper == target_upper:
+            return 10000
+
+        compact_option = self._normalize_grade_for_match(option_text)
+        compact_target = self._normalize_grade_for_match(target_text)
+
+        if compact_option == compact_target:
+            return 9500
+
+        if compact_target and compact_target in compact_option:
+            return 8000 - len(option_text)
+
+        if compact_option and compact_option in compact_target:
+            return 7000 - len(option_text)
+
+        return None
+
+    def _score_text_option_match(
+        self,
+        option_text: str,
+        option_upper: str,
+        target_text: str,
+        target_upper: str,
+    ) -> int | None:
+        if option_upper == target_upper:
+            return 10000
+
+        compact_option = self._normalize_for_contains(option_upper)
+        compact_target = self._normalize_for_contains(target_upper)
+
+        if compact_target and compact_target in compact_option:
+            return 7000 - len(option_text)
+
+        if compact_option and compact_option in compact_target:
+            return 6000 - len(option_text)
+
+        return None
 
     def extract_required_data(
         self,
@@ -715,16 +834,14 @@ class JfeAdapter(BaseAdapter):
             },
         )
 
-    # ------------------------------------------------------------------
-    # Blanking extraction
-    # ------------------------------------------------------------------
-
     def _extract_blanking_dimensions(self, connection_type: str) -> dict[str, Any]:
+        turning_length = self._extract_blanking_turning_length(connection_type)
+
         return {
             "od": self._extract_blanking_od(connection_type),
             "id": self._extract_blanking_id(connection_type),
-            "external_length": None,
-            "internal_length": None,
+            "external_length": turning_length,
+            "internal_length": turning_length,
         }
 
     def _extract_blanking_id(self, connection_type: str) -> dict[str, str]:
@@ -798,6 +915,56 @@ class JfeAdapter(BaseAdapter):
             field_name=f"JFE blanking OD {connection_type}",
         )
 
+    def _extract_blanking_turning_length(self, connection_type: str) -> str:
+        selector = "#pin_turning_length" if connection_type == "PIN" else "#box_turning_length"
+
+        raw_text = self.page.evaluate(
+            """
+            (selector) => {
+                const root = document.querySelector(selector);
+                if (!root) return null;
+
+                return root.innerText || root.textContent || null;
+            }
+            """,
+            selector,
+        )
+
+        if not raw_text:
+            raise RuntimeError(f"Could not find JFE blanking turning length section: {selector}")
+
+        value = self._extract_min_length_number(raw_text)
+        if value is None:
+            raise RuntimeError(
+                f"Could not extract JFE blanking turning length value. "
+                f"connection_type={connection_type}, raw_text=[{raw_text}]"
+            )
+
+        return self._format_length_number(value)
+
+    def _extract_min_length_number(self, text: str | None) -> str | None:
+        if not text:
+            return None
+
+        normalized = self._normalize_text(text)
+
+        match = re.search(
+            r"\bMin\s+([+\-]?\d[\d,]*(?:\.\d+)?)",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            return match.group(1)
+
+        return self._extract_first_number(normalized)
+
+    def _format_length_number(self, value: str) -> str:
+        try:
+            return f"{float(value.replace(',', '').strip()):.3f}"
+        except ValueError:
+            return value.strip()
+
     def _build_nominal_tolerance_dimension(
         self,
         raw_data: dict[str, Any],
@@ -828,10 +995,6 @@ class JfeAdapter(BaseAdapter):
         except ValueError:
             return value.strip()
 
-    # ------------------------------------------------------------------
-    # Text helpers
-    # ------------------------------------------------------------------
-
     def _normalize_text(self, text: str | None) -> str:
         if not text:
             return ""
@@ -847,6 +1010,20 @@ class JfeAdapter(BaseAdapter):
         text = text.replace("-", "")
         text = text.replace("_", "")
         return text.upper()
+
+    def _normalize_grade_for_match(self, text: str | None) -> str:
+        if not text:
+            return ""
+
+        text = self._normalize_text(text)
+        text = text.upper()
+        text = text.replace(" ", "")
+        text = text.replace("-", "")
+        text = text.replace("_", "")
+        text = text.replace("(", "")
+        text = text.replace(")", "")
+
+        return text
 
     def _extract_first_number(self, text: str | None) -> str | None:
         if not text:
