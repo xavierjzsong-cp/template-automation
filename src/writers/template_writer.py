@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
@@ -21,11 +22,13 @@ class TemplateWriter:
         bottom_adapter: dict[str, Any] | None,
         template_path: str | Path,
         output_dir: str | Path = "output_docs",
+        user_name: str | None = None,
     ) -> dict[str, Any]:
         formatted = self._build_template_fields(
             parsed=parsed,
             top_adapter=top_adapter,
             bottom_adapter=bottom_adapter,
+            user_name=user_name,
         )
 
         print("\n=== Formatted Data ===")
@@ -50,6 +53,7 @@ class TemplateWriter:
         parsed: dict[str, Any],
         top_adapter: dict[str, Any] | None,
         bottom_adapter: dict[str, Any] | None,
+        user_name: str | None = None,
     ) -> dict[str, Any]:
         connections = parsed.get("connections") or {}
         upper = connections.get("upper") or {}
@@ -83,6 +87,7 @@ class TemplateWriter:
         )
 
         return {
+            "user_name": self._format_user_name(user_name),
             "part_number": parsed.get("part_number"),
             "rev": parsed.get("rev"),
             "qcp": self._format_qcp(parsed.get("qcp")),
@@ -163,6 +168,20 @@ class TemplateWriter:
 
         text = re.sub(r"\s+", " ", text).strip()
         return text
+    
+    def _format_user_name(self, user_name: str | None) -> str | None:
+        if not user_name:
+            return None
+
+        name = str(user_name).strip()
+        name = re.sub(r"\s+", " ", name).strip()
+
+        if not name:
+            return None
+
+        today_text = date.today().strftime("%d-%m-%Y")
+
+        return f"{name.upper()} ({today_text})"
 
     def _format_material(self, mds: str | None, grade: str | None) -> str | None:
         if not mds and not grade:
@@ -539,6 +558,7 @@ class TemplateWriter:
         # worksheet 先 hardcode，后面需补充判断逻辑
         sheet = workbook.worksheets[3]
 
+        self._write_if_editable(sheet, "G1", formatted.get("user_name"))
         self._write_if_editable(sheet, "B6", formatted.get("part_number"))
         self._write_if_editable(sheet, "D6", formatted.get("rev"))
         self._write_if_editable(sheet, "B18", formatted.get("material"))
