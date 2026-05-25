@@ -11,12 +11,14 @@ writer：执行自动化写入template的操作
 2. pots_doc_parser - 三个 coating 也可以根据从 pots doc 中提取（提取规则）然后对照映射表（需建立）
 3. vam_mapper - 还有 MF（映射表需要设计）、Grade（暂不考虑）匹配逻辑没有实现
 4. jfe_adapter - Grade 的匹配逻辑还需更新，目前只能匹配13CR(80)
+5. ht_adapter - 目前还是 hardode 选项来打开 datasheet 页面
 
 
 待解决：
 1. Vam 中 Material Family 如何做映射 ？（VAM中：Carbon Steel / Deep well / NA ）
 2. coating 如何做映射 ？（什么情况下选择哪种 feature）
 3. JFE / SLHT 网页中的 Material Famlily 又是如何映射的 ？
+4. UI 界面可以美化
 
 prompt：
 现在来实现一个基本的将 coating 写入 template 的逻辑：

@@ -41,7 +41,7 @@ class HtAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "ht_adapter_v1.0")
+        self.logger = setup_logger(self.logs_dir, "ht_adapter_v1.1")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
@@ -105,10 +105,6 @@ class HtAdapter(BaseAdapter):
             "report_url": self.page.url,
         }
 
-    # ------------------------------------------------------------------
-    # Page open
-    # ------------------------------------------------------------------
-
     def open_datasheet_page(self) -> None:
         self.logger.info("Opening HT datasheet search page: %s", self.datasheet_url)
         self._goto_page(self.datasheet_url)
@@ -135,10 +131,6 @@ class HtAdapter(BaseAdapter):
             self.page.wait_for_load_state("networkidle", timeout=10000)
         except PlaywrightTimeoutError:
             pass
-
-    # ------------------------------------------------------------------
-    # Page readiness
-    # ------------------------------------------------------------------
 
     def _wait_for_search_page_loaded(self) -> None:
         self.page.wait_for_function(
@@ -202,10 +194,6 @@ class HtAdapter(BaseAdapter):
             timeout=timeout_ms,
         )
 
-    # ------------------------------------------------------------------
-    # Search selections
-    # ------------------------------------------------------------------
-
     def _select_search_options(
         self,
         connection_type: str,
@@ -243,8 +231,6 @@ class HtAdapter(BaseAdapter):
             match_mode="numeric",
         )
 
-        # PlainEndWeight 和 Wall 会由 Kendo cascade 自动选择。
-        # MaterialGrade 依赖 Wall，所以这里等待它的数据源加载完成。
         self._wait_for_kendo_dropdown_data("MaterialGrade")
 
         self._select_kendo_dropdown_by_text(
@@ -280,7 +266,18 @@ class HtAdapter(BaseAdapter):
                 const normalizeMaterial = (value) => {
                     return normalizeText(value)
                         .toUpperCase()
-                        .replace(/[\\s\\-()]/g, "");
+                        .replace(/[\\s\\-_/()]/g, "");
+                };
+
+                const extractYieldStrength = (value) => {
+                    const text = normalizeText(value).replace(/,/g, "");
+                    const matches = text.match(/\\d+(?:\\.\\d+)?/g);
+
+                    if (!matches || matches.length === 0) {
+                        return null;
+                    }
+
+                    return Number(matches[matches.length - 1]);
                 };
 
                 const scoreItem = (itemText) => {
@@ -306,6 +303,8 @@ class HtAdapter(BaseAdapter):
                         ) {
                             return 9000 - optionText.length;
                         }
+
+                        return null;
                     }
 
                     if (matchMode === "material") {
@@ -316,12 +315,18 @@ class HtAdapter(BaseAdapter):
                             return 10000;
                         }
 
+                        const optionYield = extractYieldStrength(optionText);
+                        const targetYield = extractYieldStrength(target);
+
                         if (
-                            optionMaterial.includes(targetMaterial)
-                            || targetMaterial.includes(optionMaterial)
+                            optionYield !== null
+                            && targetYield !== null
+                            && Math.abs(optionYield - targetYield) < 0.000001
                         ) {
-                            return 8000 - optionText.length;
+                            return 5000;
                         }
+
+                        return null;
                     }
 
                     if (optionUpper.includes(targetUpper)) {
@@ -341,7 +346,6 @@ class HtAdapter(BaseAdapter):
                     };
                 }
 
-                // 等待数据源加载，尤其是 cascade dropdown。
                 for (let i = 0; i < 20; i++) {
                     const view = ddl.dataSource && ddl.dataSource.view
                         ? ddl.dataSource.view()
@@ -433,29 +437,20 @@ class HtAdapter(BaseAdapter):
         except PlaywrightTimeoutError:
             pass
 
-    # ------------------------------------------------------------------
-    # Filter / report page
-    # ------------------------------------------------------------------
-
     def _click_filter_and_open_report(self) -> None:
         self.logger.info("Clicking HT Filter button")
 
-        filter_button = self.page.locator("#searchtable a.k-button:has-text('Filter')").first
+        filter_button = self.page.locator(
+            "#searchtable a.k-button:has-text('Filter')"
+        ).first
+
         filter_button.wait_for(state="visible", timeout=15000)
         filter_button.click()
 
-        try:
-            self.page.wait_for_url(
-                re.compile(r".*/ConnectorSheets/GenerateReport/.*"),
-                timeout=10000,
-            )
-            return
-        except PlaywrightTimeoutError:
-            pass
+        self._wait_for_result_grid_loaded()
 
-        # 部分情况下 Filter 先显示 result grid，再需要点击 View Datasheet。
         view_datasheet = self.page.locator(
-            "a[href*='/ConnectorSheets/GenerateReport/']:has-text('View Datasheet')"
+            "#MasterDataGrid a.k-button[href*='/ConnectorSheets/GenerateReport/']:has-text('View Datasheet')"
         ).first
 
         view_datasheet.wait_for(state="visible", timeout=30000)
@@ -479,9 +474,31 @@ class HtAdapter(BaseAdapter):
             timeout=30000,
         )
 
-    # ------------------------------------------------------------------
-    # Mapping helpers
-    # ------------------------------------------------------------------
+    def _wait_for_result_grid_loaded(self) -> None:
+        self.logger.info("Waiting for HT result grid to load")
+
+        self.page.wait_for_function(
+            """
+            () => {
+                const grid = document.querySelector("#result-grid");
+                const masterGrid = document.querySelector("#MasterDataGrid");
+
+                if (!grid || !masterGrid) return false;
+
+                const gridStyle = window.getComputedStyle(grid);
+                if (gridStyle.display === "none" || gridStyle.visibility === "hidden") {
+                    return false;
+                }
+
+                const viewLink = masterGrid.querySelector(
+                    "a[href*='/ConnectorSheets/GenerateReport/']"
+                );
+
+                return Boolean(viewLink);
+            }
+            """,
+            timeout=30000,
+        )
 
     def _map_connection_type(self, connection_name: str) -> str:
         text = connection_name.strip().upper()

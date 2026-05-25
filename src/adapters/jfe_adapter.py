@@ -16,23 +16,6 @@ from src.adapters.base_adapter import BaseAdapter
 from src.utils import ensure_dir, setup_logger
 
 
-# --------------------------------------------------------------------------------------------------------------------------
-# 当前版本实现：
-# 1. datasheet_generator 页面：
-#    打开页面 → 根据 mapped_data 按顺序选择 6 个字段
-#    → 抓取 Joint Strength、Compression Rating、Internal Yield Pressure、Collapse Pressure、Drift Diameter
-#
-# 2. blanking_dimensions 页面：
-#    打开页面 → 根据 mapped_data 按顺序选择 4 个字段
-#    → 根据 PIN / BOX 抓取 OD、ID，返回 nominal + tol_1 + tol_2 结构
-#    → 根据 PIN / BOX 抓取 turning length，作为 external_length 和 internal_length 返回
-#
-# 3. Grade 选择：
-#    新版 JfeMapper 输出 material_family / yield_strength / grade_source。
-#    Adapter 根据 grade_source 判断匹配 standard grade 还是 JFE 自有 grade。
-# --------------------------------------------------------------------------------------------------------------------------
-
-
 class JfeAdapter(BaseAdapter):
 
     NA = "NA"
