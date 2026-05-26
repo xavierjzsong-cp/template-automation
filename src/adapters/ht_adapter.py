@@ -23,6 +23,13 @@ class HtAdapter(BaseAdapter):
 
     CONNECTION_STYLE = "Threaded and Coupled"
 
+    REPORT_SECTION_LABELS = {
+        "Pipe Body Data",
+        "Connection Data",
+        "Operational Data",
+        "Notes",
+    }
+
     def __init__(
         self,
         base_url: str,
@@ -41,7 +48,7 @@ class HtAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "ht_adapter_v1.1")
+        self.logger = setup_logger(self.logs_dir, "ht_adapter_v1.3")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
@@ -68,18 +75,16 @@ class HtAdapter(BaseAdapter):
         connection = mapped_data.get("connection") or {}
 
         connection_name = connection.get("name")
-        od = connection.get("od")
-        weight = connection.get("weight")
+        od_value = connection.get("od")
+        weight_value = connection.get("weight")
 
-        if not connection_name or not od or not weight:
+        if not connection_name or not od_value or not weight_value:
             raise ValueError(
                 "HT mapped_data missing one of required fields: "
                 "connection.name, connection.od, connection.weight"
             )
 
         connection_type = self._map_connection_type(connection_name)
-        od_value = self._map_od(od)
-        weight_value = self._map_weight(weight)
         material_grade = self._map_material_grade(mapped_data)
 
         if not material_grade:
@@ -93,17 +98,15 @@ class HtAdapter(BaseAdapter):
 
         self._select_search_options(
             connection_type=connection_type,
-            od_value=od_value,
-            weight_value=weight_value,
+            od_value=str(od_value).strip(),
+            weight_value=str(weight_value).strip(),
             material_grade=material_grade,
         )
 
         self._click_filter_and_open_report()
+        self._wait_for_report_loaded()
 
-        return {
-            "status": "report_opened",
-            "report_url": self.page.url,
-        }
+        return self.extract_required_data(mapped_data)
 
     def open_datasheet_page(self) -> None:
         self.logger.info("Opening HT datasheet search page: %s", self.datasheet_url)
@@ -500,6 +503,300 @@ class HtAdapter(BaseAdapter):
             timeout=30000,
         )
 
+    # ------------------------------------------------------------------
+    # Report extraction
+    # ------------------------------------------------------------------
+
+    def _wait_for_report_loaded(self) -> None:
+        self.logger.info("Waiting for HT report iframe content to load")
+
+        self.page.locator("#ReportViewerReportFrame").wait_for(
+            state="attached",
+            timeout=30000,
+        )
+
+        for _ in range(45):
+            try:
+                blocks = self._get_report_text_blocks()
+                texts = {self._normalize_report_label(block.get("text")) for block in blocks}
+
+                if (
+                    self._normalize_report_label("Connection Data") in texts
+                    and self._normalize_report_label("Pipe Body Data") in texts
+                ):
+                    return
+
+            except Exception:
+                pass
+
+            self.page.wait_for_timeout(1000)
+
+        raise RuntimeError("HT report content did not finish loading.")
+
+    def extract_required_data(self, mapped_data: dict[str, Any]) -> dict[str, Any]:
+        connection_data = self._extract_connection_data()
+
+        drift = self.NA
+        if bool(mapped_data.get("drift_extraction")):
+            drift = self._extract_api_drift_diameter()
+
+        return {
+            **connection_data,
+            "drift": drift,
+        }
+
+    def _extract_connection_data(self) -> dict[str, str | None]:
+        return {
+            "tensile": self._extract_report_number(
+                section_label="Connection Data",
+                field_label="Longitudinal Yield Strength",
+            ),
+            "compression": self._extract_report_number(
+                section_label="Connection Data",
+                field_label="Compressive Limit",
+            ),
+            "burst": self._extract_report_number(
+                section_label="Connection Data",
+                field_label="Internal Pressure Rating",
+            ),
+            "collapse": self._extract_report_number(
+                section_label="Connection Data",
+                field_label="External Pressure Rating",
+            ),
+        }
+
+    def _extract_api_drift_diameter(self) -> str | None:
+        return self._extract_report_number(
+            section_label="Pipe Body Data",
+            field_label="API Drift Diameter",
+        )
+
+    def _extract_report_number(
+        self,
+        section_label: str,
+        field_label: str,
+    ) -> str:
+        blocks = self._get_report_text_blocks()
+
+        section_start, section_end = self._find_report_section_bounds(
+            blocks=blocks,
+            section_label=section_label,
+        )
+
+        label_block = self._find_report_label_block(
+            blocks=blocks,
+            section_start=section_start,
+            section_end=section_end,
+            field_label=field_label,
+        )
+
+        value_text = self._find_report_value_for_label(
+            blocks=blocks,
+            label_block=label_block,
+            section_start=section_start,
+            section_end=section_end,
+        )
+
+        number = self._extract_first_number(value_text)
+        if number is None:
+            raise RuntimeError(
+                f"Could not extract numeric value from HT report field. "
+                f"section=[{section_label}], field=[{field_label}], raw_value=[{value_text}]"
+            )
+
+        return number
+
+    def _get_report_frame(self):
+        iframe = self.page.locator("#ReportViewerReportFrame")
+        iframe.wait_for(state="attached", timeout=30000)
+
+        iframe_handle = iframe.element_handle()
+        if iframe_handle is None:
+            raise RuntimeError("HT ReportViewerReportFrame element handle not found.")
+
+        frame = iframe_handle.content_frame()
+        if frame is None:
+            raise RuntimeError("HT ReportViewerReportFrame content frame not found.")
+
+        return frame
+
+    def _get_report_text_blocks(self) -> list[dict[str, Any]]:
+        frame = self._get_report_frame()
+
+        return frame.evaluate(
+            """
+            () => {
+                const parsePx = (styleText, name) => {
+                    const regex = new RegExp(name + "\\\\s*:\\\\s*(-?\\\\d+(?:\\\\.\\\\d+)?)px", "i");
+                    const match = String(styleText || "").match(regex);
+                    return match ? Number(match[1]) : null;
+                };
+
+                const normalize = (value) => {
+                    return String(value || "")
+                        .replace(/\\u00a0/g, " ")
+                        .replace(/\\s+/g, " ")
+                        .trim();
+                };
+
+                const nodes = Array.from(document.querySelectorAll("div[data-id]"));
+
+                return nodes
+                    .map((el) => {
+                        const styleText = el.getAttribute("style") || "";
+                        const text = normalize(el.innerText || el.textContent || "");
+
+                        const left = parsePx(styleText, "left");
+                        const top = parsePx(styleText, "top");
+                        const width = parsePx(styleText, "width");
+                        const height = parsePx(styleText, "height");
+
+                        if (!text || left === null || top === null) {
+                            return null;
+                        }
+
+                        return {
+                            id: el.getAttribute("data-id") || "",
+                            text,
+                            left,
+                            top,
+                            width: width || 0,
+                            height: height || 0,
+                        };
+                    })
+                    .filter(Boolean);
+            }
+            """
+        )
+
+    def _find_report_section_bounds(
+        self,
+        blocks: list[dict[str, Any]],
+        section_label: str,
+    ) -> tuple[float, float]:
+        target = self._normalize_report_label(section_label)
+
+        section_blocks = [
+            block
+            for block in blocks
+            if self._normalize_report_label(block.get("text")) == target
+        ]
+
+        if not section_blocks:
+            raise RuntimeError(f"HT report section not found: {section_label}")
+
+        section_block = min(section_blocks, key=lambda block: float(block.get("top", 0)))
+        section_start = float(section_block.get("top", 0))
+
+        all_section_labels = {
+            self._normalize_report_label(label)
+            for label in self.REPORT_SECTION_LABELS
+        }
+
+        next_section_tops = [
+            float(block.get("top", 0))
+            for block in blocks
+            if (
+                self._normalize_report_label(block.get("text")) in all_section_labels
+                and float(block.get("top", 0)) > section_start
+            )
+        ]
+
+        section_end = min(next_section_tops) if next_section_tops else float("inf")
+
+        return section_start, section_end
+
+    def _find_report_label_block(
+        self,
+        blocks: list[dict[str, Any]],
+        section_start: float,
+        section_end: float,
+        field_label: str,
+    ) -> dict[str, Any]:
+        target = self._normalize_report_label(field_label)
+
+        candidates = [
+            block
+            for block in blocks
+            if (
+                section_start <= float(block.get("top", 0)) < section_end
+                and self._normalize_report_label(block.get("text")) == target
+            )
+        ]
+
+        if not candidates:
+            raise RuntimeError(f"HT report field label not found: {field_label}")
+
+        # 优先选择左侧普通 connection/pipe body 数据列，避免选到右侧 SC 字段。
+        return min(
+            candidates,
+            key=lambda block: (
+                float(block.get("left", 0)),
+                float(block.get("top", 0)),
+            ),
+        )
+
+    def _find_report_value_for_label(
+        self,
+        blocks: list[dict[str, Any]],
+        label_block: dict[str, Any],
+        section_start: float,
+        section_end: float,
+    ) -> str:
+        label_top = float(label_block.get("top", 0))
+        label_left = float(label_block.get("left", 0))
+
+        row_tolerance = 2.0
+
+        candidates = [
+            block
+            for block in blocks
+            if (
+                section_start <= float(block.get("top", 0)) < section_end
+                and abs(float(block.get("top", 0)) - label_top) <= row_tolerance
+                and float(block.get("left", 0)) > label_left + 10
+                and self._extract_first_number(block.get("text")) is not None
+            )
+        ]
+
+        if not candidates:
+            raise RuntimeError(
+                f"HT report value not found for label: {label_block.get('text')}"
+            )
+
+        # 同一行右侧最近的数字文本就是字段值；再右侧通常是单位。
+        value_block = min(
+            candidates,
+            key=lambda block: float(block.get("left", 0)),
+        )
+
+        return str(value_block.get("text") or "").strip()
+
+    def _normalize_report_label(self, text: Any) -> str:
+        value = str(text or "")
+        value = value.replace("\u00a0", " ")
+        value = re.sub(r"\s+", " ", value)
+        value = value.strip().rstrip(":")
+        return value.lower()
+
+    def _extract_first_number(self, text: Any) -> str | None:
+        if text is None:
+            return None
+
+        value = str(text).strip()
+        if not value:
+            return None
+
+        match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", value)
+        if not match:
+            return None
+
+        return match.group(0)
+
+    # ------------------------------------------------------------------
+    # Mapping helpers
+    # ------------------------------------------------------------------
+
     def _map_connection_type(self, connection_name: str) -> str:
         text = connection_name.strip().upper()
         text = text.replace(" ", "")
@@ -511,20 +808,6 @@ class HtAdapter(BaseAdapter):
             return "SEAL-LOCK HT"
 
         raise ValueError(f"Unsupported HT connection name: {connection_name}")
-
-    def _map_od(self, od: str) -> str:
-        value = self._parse_fraction_or_decimal(od)
-        if value is None:
-            return od.strip()
-
-        return f"{value:.3f}"
-
-    def _map_weight(self, weight: str) -> str:
-        value = self._parse_fraction_or_decimal(weight)
-        if value is None:
-            return weight.strip()
-
-        return f"{value:.3f}"
 
     def _map_material_grade(self, mapped_data: dict[str, Any]) -> str | None:
         connection = mapped_data.get("connection") or {}
@@ -596,26 +879,3 @@ class HtAdapter(BaseAdapter):
             return f"13-CR-{strength}"
 
         return f"{family}-{strength}"
-
-    def _parse_fraction_or_decimal(self, value: str) -> float | None:
-        text = str(value).strip()
-        text = text.replace('"', "")
-        text = text.replace("in", "")
-        text = text.replace("IN", "")
-        text = re.sub(r"\s+", " ", text).strip()
-
-        fraction_match = re.match(
-            r"^(\d+(?:\.\d+)?)\s+(\d+)/(\d+)$",
-            text,
-        )
-
-        if fraction_match:
-            whole = float(fraction_match.group(1))
-            numerator = float(fraction_match.group(2))
-            denominator = float(fraction_match.group(3))
-            return whole + numerator / denominator
-
-        try:
-            return float(text)
-        except ValueError:
-            return None
