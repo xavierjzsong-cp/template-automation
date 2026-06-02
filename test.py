@@ -20,6 +20,12 @@ from src.writers.template_writer import TemplateWriter
 from src.adapters.jfe_adapter import JfeAdapter
 
 
+
+project_root = Path(__file__).resolve().parent
+sys.path.insert(0, str(project_root))
+
+from src.mappers.ht_mapper import HtMapper
+from src.adapters.ht_adapter import HtAdapter
 """
 # 测试整个流程
 def load_partners_config(config_path: Path) -> dict[str, Any]:
@@ -262,7 +268,9 @@ def main() -> None:
     print("\nFull flow test passed.")
 """
 
+
 # test JFE
+"""
 project_root = Path(__file__).resolve().parent
 sys.path.insert(0, str(project_root))
 
@@ -345,6 +353,109 @@ def main() -> None:
     print(json.dumps(adapter_result, ensure_ascii=False, indent=4))
 
     validate_adapter_result(adapter_result)
+"""
+
+
+def build_simulated_router_output() -> tuple[dict[str, Any], dict[str, Any]]:
+    """
+    模拟 parser + router 对以下 description 的处理结果：
+
+    5.5" 20# VAM TOP HT BOX x 5.5" 20# SLHT PIN, MDS-173(S13CR-95KSI)
+
+    这里只测试 HT 这一端，所以 target 只模拟 lower / SLHT PIN。
+    """
+
+    description = '5.5" 20# VAM TOP HT BOX x 5.5" 20# SLHT PIN, MDS-173(S13CR-95KSI)'
+
+    target = {
+        "partner": "HT",
+        "side": "lower",
+        "connection": {
+            "name": "SLHT",
+            "od": "5.5",
+            "weight": "20",
+            "type": "PIN",
+        },
+    }
+
+    shared_data = {
+        # parser/router 后续应该统一输出成这种格式
+        "product_material_grade": "S13CR(95)",
+
+        # 用 True 测试 API Drift Diameter 抓取逻辑
+        "drift_extraction": True,
+
+        # 这里只是为了打印检查，不参与 mapper 逻辑也可以
+        "raw_description": description,
+    }
+
+    return target, shared_data
+
+
+def validate_adapter_result(result: dict[str, Any]) -> None:
+    required_fields = [
+        "tensile",
+        "compression",
+        "burst",
+        "collapse",
+        "drift",
+    ]
+
+    missing = [field for field in required_fields if field not in result]
+    if missing:
+        raise AssertionError(f"HT adapter result missing fields: {missing}")
+
+    empty = [
+        field
+        for field in required_fields
+        if result.get(field) is None or str(result.get(field)).strip() == ""
+    ]
+
+    if empty:
+        raise AssertionError(f"HT adapter result has empty fields: {empty}")
+
+    print("\nHT adapter validation passed.")
+
+
+def main() -> None:
+    target, shared_data = build_simulated_router_output()
+
+    print("=== Simulated Router Target ===")
+    print(json.dumps(target, ensure_ascii=False, indent=4))
+
+    print("\n=== Simulated Shared Data ===")
+    print(json.dumps(shared_data, ensure_ascii=False, indent=4))
+
+    mapper = HtMapper()
+
+    mapped_data = mapper.build_mapped_data(
+        target=target,
+        shared_data=shared_data,
+    )
+
+    print("\n=== HT Mapped Data ===")
+    print(json.dumps(mapped_data, ensure_ascii=False, indent=4))
+
+    adapter = HtAdapter(
+        base_url="https://datasheet.hunting-intl.com",
+        datasheet_url="https://datasheet.hunting-intl.com/CommercialDatasheets",
+        logs_dir=project_root / "logs",
+        headless=False,
+        slow_mo=300,
+        timeout_ms=10000,
+        navigation_timeout_ms=60000,
+    )
+
+    try:
+        adapter_result = adapter.run(mapped_data)
+    finally:
+        adapter.close()
+
+    print("\n=== HT Adapter Result ===")
+    print(json.dumps(adapter_result, ensure_ascii=False, indent=4))
+
+    validate_adapter_result(adapter_result)
+
 
 
 if __name__ == "__main__":

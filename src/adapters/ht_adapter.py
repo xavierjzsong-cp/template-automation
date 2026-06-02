@@ -30,6 +30,21 @@ class HtAdapter(BaseAdapter):
         "Notes",
     }
 
+    BLANKING_COLUMNS = {
+        "PIN": {
+            "id": 159.0,
+            "od": 216.0,
+            "internal_length": [274.0, 331.0],
+            "external_length": [389.0, 446.0],
+        },
+        "BOX": {
+            "id": 562.0,
+            "od": 619.0,
+            "internal_length": [735.0, 792.0],
+            "external_length": [850.0, 907.0],
+        },
+    }
+
     def __init__(
         self,
         base_url: str,
@@ -48,7 +63,7 @@ class HtAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "ht_adapter_v1.3")
+        self.logger = setup_logger(self.logs_dir, "ht_adapter_v1.6")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
@@ -90,7 +105,7 @@ class HtAdapter(BaseAdapter):
         if not material_grade:
             raise ValueError(
                 "HT mapped_data missing material grade information. "
-                "Expected connection.material_grade or connection.material_family + connection.yield_strength."
+                "Expected connection.material_family + connection.yield_strength."
             )
 
         self.open_datasheet_page()
@@ -106,7 +121,17 @@ class HtAdapter(BaseAdapter):
         self._click_filter_and_open_report()
         self._wait_for_report_loaded()
 
-        return self.extract_required_data(mapped_data)
+        datasheet_result = self.extract_required_data(mapped_data)
+
+        self._open_blanking_sheet_from_datasheet()
+        self._wait_for_blanking_report_loaded()
+
+        blanking_result = self.extract_blanking_dimensions(mapped_data)
+
+        return {
+            **datasheet_result,
+            **blanking_result,
+        }
 
     def open_datasheet_page(self) -> None:
         self.logger.info("Opening HT datasheet search page: %s", self.datasheet_url)
@@ -503,6 +528,39 @@ class HtAdapter(BaseAdapter):
             timeout=30000,
         )
 
+    def _open_blanking_sheet_from_datasheet(self) -> None:
+        self.logger.info("Opening HT blanking sheet from connector sheet page")
+
+        blanking_sheet_link = self.page.locator(
+            "a.k-button[href*='/BlankingSheets/GenerateReport/']:has-text('View Blanking Sheet')"
+        ).first
+
+        blanking_sheet_link.wait_for(state="visible", timeout=30000)
+
+        href = blanking_sheet_link.get_attribute("href")
+        if not href:
+            raise RuntimeError("HT View Blanking Sheet link found but href is empty.")
+
+        blanking_url = urljoin(self.base_url, href)
+
+        self.logger.info("Opening HT blanking sheet page: %s", blanking_url)
+
+        self._goto_page(blanking_url)
+
+        self.page.wait_for_function(
+            """
+            () => {
+                return window.location.href.includes("/BlankingSheets/GenerateReport/");
+            }
+            """,
+            timeout=30000,
+        )
+
+        self.page.locator("#ReportViewerReportFrame").wait_for(
+            state="attached",
+            timeout=30000,
+        )
+
     # ------------------------------------------------------------------
     # Report extraction
     # ------------------------------------------------------------------
@@ -532,6 +590,33 @@ class HtAdapter(BaseAdapter):
             self.page.wait_for_timeout(1000)
 
         raise RuntimeError("HT report content did not finish loading.")
+
+    def _wait_for_blanking_report_loaded(self) -> None:
+        self.logger.info("Waiting for HT blanking report iframe content to load")
+
+        self.page.locator("#ReportViewerReportFrame").wait_for(
+            state="attached",
+            timeout=30000,
+        )
+
+        for _ in range(45):
+            try:
+                blocks = self._get_report_text_blocks()
+                texts = {self._normalize_report_label(block.get("text")) for block in blocks}
+
+                if (
+                    self._normalize_report_label("ACCESSORY BLANKING DIMENSIONS") in texts
+                    and self._normalize_report_label("ACCESSORY PIN") in texts
+                    and self._normalize_report_label("ACCESSORY BOX") in texts
+                ):
+                    return
+
+            except Exception:
+                pass
+
+            self.page.wait_for_timeout(1000)
+
+        raise RuntimeError("HT blanking report content did not finish loading.")
 
     def extract_required_data(self, mapped_data: dict[str, Any]) -> dict[str, Any]:
         connection_data = self._extract_connection_data()
@@ -570,6 +655,53 @@ class HtAdapter(BaseAdapter):
             section_label="Pipe Body Data",
             field_label="API Drift Diameter",
         )
+
+    def extract_blanking_dimensions(self, mapped_data: dict[str, Any]) -> dict[str, Any]:
+        connection = mapped_data.get("connection") or {}
+        connection_type = (connection.get("type") or "").upper().strip()
+
+        if connection_type not in self.BLANKING_COLUMNS:
+            raise ValueError(
+                f"HT blanking extraction only supports PIN or BOX connection type. "
+                f"Got: {connection.get('type')}"
+            )
+
+        blocks = self._get_report_text_blocks()
+        columns = self.BLANKING_COLUMNS[connection_type]
+
+        od = self._extract_blanking_dimension_by_column(
+            blocks=blocks,
+            column_left=columns["od"],
+        )
+        id_value = self._extract_blanking_dimension_by_column(
+            blocks=blocks,
+            column_left=columns["id"],
+        )
+
+        internal_length = self._extract_min_blanking_length(
+            blocks=blocks,
+            column_lefts=columns["internal_length"],
+        )
+        external_length = self._extract_min_blanking_length(
+            blocks=blocks,
+            column_lefts=columns["external_length"],
+        )
+
+        self.logger.info(
+            "Extracted HT blanking dimensions for %s: od=%s, id=%s, external_length=%s, internal_length=%s",
+            connection_type,
+            od,
+            id_value,
+            external_length,
+            internal_length,
+        )
+
+        return {
+            "od": od,
+            "id": id_value,
+            "external_length": external_length,
+            "internal_length": internal_length,
+        }
 
     def _extract_report_number(
         self,
@@ -727,7 +859,6 @@ class HtAdapter(BaseAdapter):
         if not candidates:
             raise RuntimeError(f"HT report field label not found: {field_label}")
 
-        # 优先选择左侧普通 connection/pipe body 数据列，避免选到右侧 SC 字段。
         return min(
             candidates,
             key=lambda block: (
@@ -764,13 +895,173 @@ class HtAdapter(BaseAdapter):
                 f"HT report value not found for label: {label_block.get('text')}"
             )
 
-        # 同一行右侧最近的数字文本就是字段值；再右侧通常是单位。
         value_block = min(
             candidates,
             key=lambda block: float(block.get("left", 0)),
         )
 
         return str(value_block.get("text") or "").strip()
+
+    def _extract_blanking_dimension_by_column(
+        self,
+        blocks: list[dict[str, Any]],
+        column_left: float,
+    ) -> dict[str, str]:
+        tolerance_text, nominal_text = self._extract_blanking_column_tolerance_and_value(
+            blocks=blocks,
+            column_left=column_left,
+        )
+
+        tol_1, tol_2 = self._split_blanking_tolerance(tolerance_text)
+
+        nominal = self._extract_first_number(nominal_text)
+        if nominal is None:
+            raise RuntimeError(
+                f"Could not extract HT blanking nominal value. "
+                f"column_left={column_left}, raw_value={nominal_text}"
+            )
+
+        return {
+            "nominal": nominal,
+            "tol_1": tol_1,
+            "tol_2": tol_2,
+        }
+
+    def _extract_min_blanking_length(
+        self,
+        blocks: list[dict[str, Any]],
+        column_lefts: list[float],
+    ) -> str:
+        values: list[float] = []
+
+        for column_left in column_lefts:
+            value_text = self._extract_blanking_column_value(
+                blocks=blocks,
+                column_left=column_left,
+            )
+
+            number = self._extract_first_number(value_text)
+            if number is None:
+                raise RuntimeError(
+                    f"Could not extract HT blanking length value. "
+                    f"column_left={column_left}, raw_value={value_text}"
+                )
+
+            values.append(self._to_float(number))
+
+        if not values:
+            raise RuntimeError(f"No HT blanking length values found: {column_lefts}")
+
+        return f"{min(values):.3f}"
+
+    def _extract_blanking_column_tolerance_and_value(
+        self,
+        blocks: list[dict[str, Any]],
+        column_left: float,
+    ) -> tuple[str, str]:
+        column_blocks = self._get_blocks_by_left(
+            blocks=blocks,
+            column_left=column_left,
+        )
+
+        tolerance_label = self._find_column_tolerance_label_block(column_blocks)
+
+        blocks_after_label = [
+            block
+            for block in column_blocks
+            if float(block.get("top", 0)) > float(tolerance_label.get("top", 0))
+        ]
+
+        if len(blocks_after_label) < 2:
+            raise RuntimeError(
+                f"Not enough HT blanking column blocks after tolerance label. "
+                f"column_left={column_left}, blocks={column_blocks}"
+            )
+
+        tolerance_block = blocks_after_label[0]
+        value_block = blocks_after_label[1]
+
+        return (
+            str(tolerance_block.get("text") or "").strip(),
+            str(value_block.get("text") or "").strip(),
+        )
+
+    def _extract_blanking_column_value(
+        self,
+        blocks: list[dict[str, Any]],
+        column_left: float,
+    ) -> str:
+        _, value_text = self._extract_blanking_column_tolerance_and_value(
+            blocks=blocks,
+            column_left=column_left,
+        )
+        return value_text
+
+    def _get_blocks_by_left(
+        self,
+        blocks: list[dict[str, Any]],
+        column_left: float,
+        tolerance: float = 3.0,
+    ) -> list[dict[str, Any]]:
+        column_blocks = [
+            block
+            for block in blocks
+            if abs(float(block.get("left", 0)) - column_left) <= tolerance
+        ]
+
+        column_blocks = sorted(
+            column_blocks,
+            key=lambda block: float(block.get("top", 0)),
+        )
+
+        if not column_blocks:
+            raise RuntimeError(
+                f"No HT report blocks found for column_left={column_left}"
+            )
+
+        return column_blocks
+
+    def _find_column_tolerance_label_block(
+        self,
+        column_blocks: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        candidates = [
+            block
+            for block in column_blocks
+            if self._normalize_report_label(block.get("text")) == "tolerance"
+        ]
+
+        if not candidates:
+            raise RuntimeError(
+                f"HT blanking tolerance label not found in column blocks: {column_blocks}"
+            )
+
+        return min(
+            candidates,
+            key=lambda block: float(block.get("top", 0)),
+        )
+
+    def _split_blanking_tolerance(self, tolerance_text: str) -> tuple[str, str]:
+        text = str(tolerance_text or "").strip()
+        text = text.replace("\u00a0", " ")
+        text = re.sub(r"\s+", "", text)
+
+        if not text:
+            raise RuntimeError("Empty HT blanking tolerance text.")
+
+        if text.startswith("±"):
+            number = text[1:].strip()
+            if not number:
+                raise RuntimeError(f"Invalid HT blanking tolerance: {tolerance_text}")
+
+            return f"+{number}", f"-{number}"
+
+        parts = re.findall(r"[+-](?:\d+(?:\.\d+)?|\.\d+)", text)
+
+        if len(parts) >= 2:
+            return parts[0], parts[1]
+
+        raise RuntimeError(f"Unsupported HT blanking tolerance format: {tolerance_text}")
 
     def _normalize_report_label(self, text: Any) -> str:
         value = str(text or "")
@@ -787,11 +1078,14 @@ class HtAdapter(BaseAdapter):
         if not value:
             return None
 
-        match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", value)
+        match = re.search(r"[-+]?(?:\d[\d,]*(?:\.\d+)?|\.\d+)", value)
         if not match:
             return None
 
         return match.group(0)
+
+    def _to_float(self, number_text: str) -> float:
+        return float(str(number_text).replace(",", ""))
 
     # ------------------------------------------------------------------
     # Mapping helpers
@@ -812,57 +1106,16 @@ class HtAdapter(BaseAdapter):
     def _map_material_grade(self, mapped_data: dict[str, Any]) -> str | None:
         connection = mapped_data.get("connection") or {}
 
-        direct_grade = (
-            connection.get("material_grade")
-            or mapped_data.get("material_grade")
-            or mapped_data.get("product_material_grade")
+        material_family = connection.get("material_family")
+        yield_strength = connection.get("yield_strength")
+
+        if not material_family or not yield_strength:
+            return None
+
+        return self._build_material_grade(
+            material_family=str(material_family),
+            yield_strength=str(yield_strength),
         )
-
-        if direct_grade:
-            mapped = self._normalize_material_grade(str(direct_grade))
-            if mapped:
-                return mapped
-
-        material_family = connection.get("material_family") or mapped_data.get("material_family")
-        yield_strength = connection.get("yield_strength") or mapped_data.get("yield_strength")
-
-        if material_family and yield_strength:
-            return self._build_material_grade(
-                material_family=str(material_family),
-                yield_strength=str(yield_strength),
-            )
-
-        return None
-
-    def _normalize_material_grade(self, grade: str) -> str | None:
-        text = grade.strip().upper()
-        text = text.replace(" ", "")
-
-        match = re.match(r"^([A-Z0-9]+)\((\d+(?:\.\d+)?)\)$", text)
-        if match:
-            return self._build_material_grade(
-                material_family=match.group(1),
-                yield_strength=match.group(2),
-            )
-
-        match = re.match(r"^([A-Z0-9]+)-(\d+(?:\.\d+)?)$", text)
-        if match:
-            return self._build_material_grade(
-                material_family=match.group(1),
-                yield_strength=match.group(2),
-            )
-
-        match = re.match(r"^(13CR)(\d+(?:\.\d+)?)$", text)
-        if match:
-            return self._build_material_grade(
-                material_family=match.group(1),
-                yield_strength=match.group(2),
-            )
-
-        if re.match(r"^[A-Z]+-\d+(?:\.\d+)?$", text):
-            return text
-
-        return grade.strip()
 
     def _build_material_grade(
         self,
@@ -874,8 +1127,5 @@ class HtAdapter(BaseAdapter):
 
         if strength.endswith(".0"):
             strength = strength[:-2]
-
-        if family == "13CR":
-            return f"13-CR-{strength}"
 
         return f"{family}-{strength}"
