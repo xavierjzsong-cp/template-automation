@@ -59,10 +59,10 @@ class PartnerRouter:
 
             mapper = mapper_registry.get(partner)
             if mapper is None:
-                #raise ValueError(f"No mapper registered for partner: {partner}")
+                raise ValueError(f"No mapper registered for partner: {partner}")
                 # 当前保留跳过逻辑，方便只测试部分 mapper
-                print(f"Skipping target because no mapper is registered for partner: {partner}")
-                continue
+                #print(f"Skipping target because no mapper is registered for partner: {partner}")
+                #continue
 
             mapped_data = mapper.build_mapped_data(
                 target=target,
