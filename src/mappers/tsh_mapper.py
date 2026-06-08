@@ -51,31 +51,47 @@ class TshMapper(BaseMapper):
             return f"{float(weight):.2f}"
         except ValueError:
             return weight.strip()
-    
+
     def _map_material_family(self, grade: str | None) -> str | None:
-        if not grade:
+        parsed = self._parse_product_material_grade(grade)
+        if parsed is None:
             return None
 
-        text = grade.strip().upper()
-        match = re.match(r"^([A-Z0-9]+)\s*[\(\[]", text)
-        if match:
-            return match.group(1)
-
-        match = re.match(r"^([A-Z0-9]+)", text)
-        if match:
-            return match.group(1)
-
-        return None
+        return parsed["material_family"]
 
     def _map_yield_strength(self, grade: str | None) -> str | None:
-        if not grade:
+        parsed = self._parse_product_material_grade(grade)
+        if parsed is None:
             return None
 
-        match = re.search(r"[\(\[](\d+(?:\.\d+)?)[\)\]]", grade)
+        return parsed["yield_strength"]
+
+    def _parse_product_material_grade(
+        self,
+        product_material_grade: str | None,
+    ) -> dict[str, str] | None:
+        if not product_material_grade:
+            return None
+
+        text = product_material_grade.strip().upper()
+        text = re.sub(r"\s+", "", text)
+
+        match = re.match(
+            r"^(?P<family>[A-Z0-9]+)\((?P<strength>\d+(?:\.\d+)?)\)$",
+            text,
+        )
+
         if not match:
             return None
 
-        value = match.group(1)
+        return {
+            "material_family": match.group("family"),
+            "yield_strength": self._normalize_strength(match.group("strength")),
+        }
+
+    def _normalize_strength(self, strength: str) -> str:
+        value = strength.strip()
+
         if value.endswith(".0"):
             value = value[:-2]
 

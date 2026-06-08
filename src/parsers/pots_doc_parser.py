@@ -17,6 +17,24 @@ class POTSDocParser:
         "HT": ["SLHT-S", "SLHT"],
     }
 
+    MATERIAL_FAMILY_PATTERN = r"(?:SUPER\s*)?S?13CR|13CR|41\d{2}|INCOLLOY|INCOL"
+
+    MATERIAL_GRADE_PATTERNS = [
+        # FAMILY(80), FAMILY[80], FAMILY(80KSI)
+        rf"\b(?P<family>{MATERIAL_FAMILY_PATTERN})\s*[\(\[]\s*(?P<grade>\d+(?:\.\d+)?)\s*(?:KSI)?\s*[\)\]]",
+
+        # FAMILY-80KSI, FAMILY 80 KSI
+        rf"\b(?P<family>{MATERIAL_FAMILY_PATTERN})\s*[- ]+\s*(?P<grade>\d+(?:\.\d+)?)\s*KSI\b",
+
+        # FAMILY-925, FAMILY 925
+        # 用于 INCOLLOY 925 / INCOL-925 / 4140 80 等有分隔符但不带 KSI 的情况。
+        rf"\b(?P<family>{MATERIAL_FAMILY_PATTERN})\s*[- ]+\s*(?P<grade>\d{{2,4}}(?:\.\d+)?)\b",
+
+        # 13CR80 / S13CR95 / SUPER 13CR95
+        # 紧贴格式暂时只开放给 CR 系列，避免 414080 这类组合误判。
+        r"\b(?P<family>(?:SUPER\s*)?S?13CR|13CR)\s*(?P<grade>\d{2,3}(?:\.\d+)?)\b",
+    ]
+
     def parse(self, input_path: Path) -> dict[str, Any]:
         full_text = self._extract_text_from_docs(input_path, max_pages=2)
         cleaned_text = self._normalize_text(full_text)
@@ -340,22 +358,19 @@ class POTSDocParser:
         return None
 
     def _extract_material_grade(self, text: str) -> str | None:
-        patterns = [
-            r"\b((?:SUPER\s*)?S?13CR|13CR)\s*[\(\[]\s*(\d+(?:\.\d+)?)\s*[\)\]]",
-
-            r"\b((?:SUPER\s*)?S?13CR|13CR)\s*[- ]+\s*(\d+(?:\.\d+)?)\s*KSI\b",
-
-            r"\b((?:SUPER\s*)?S?13CR|13CR)\s*[- ]?\s*(\d{2,3}(?:\.\d+)?)\b",
-        ]
-
-        for pattern in patterns:
+        for pattern in self.MATERIAL_GRADE_PATTERNS:
             match = re.search(pattern, text, flags=re.IGNORECASE)
             if match:
-                family = re.sub(r"\s+", "", match.group(1).upper())
-                strength = self._clean_number(match.group(2))
-                return f"{family}({strength})"
+                family = self._normalize_material_family(match.group("family"))
+                grade = self._clean_number(match.group("grade"))
+                return f"{family}({grade})"
 
         return None
+
+    def _normalize_material_family(self, family: str) -> str:
+        text = family.upper()
+        text = re.sub(r"\s+", "", text)
+        return text
 
     def _normalize_material_grade(self, value: str | None) -> str | None:
         if not value:
@@ -392,13 +407,7 @@ class POTSDocParser:
         for pattern in overall_length_patterns:
             cleaned = re.sub(pattern, " ", cleaned, flags=re.IGNORECASE)
 
-        material_patterns = [
-            r"\b((?:SUPER\s*)?S?13CR|13CR)\s*[\(\[]\s*\d+(?:\.\d+)?\s*[\)\]]",
-            r"\b((?:SUPER\s*)?S?13CR|13CR)\s*[- ]+\s*\d+(?:\.\d+)?\s*KSI\b",
-            r"\b((?:SUPER\s*)?S?13CR|13CR)\s*[- ]?\s*\d{2,3}(?:\.\d+)?\b",
-        ]
-
-        for pattern in material_patterns:
+        for pattern in self.MATERIAL_GRADE_PATTERNS:
             cleaned = re.sub(pattern, " ", cleaned, flags=re.IGNORECASE)
 
         cleaned = cleaned.replace(",", " ")
