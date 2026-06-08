@@ -106,32 +106,7 @@ class CoatingMapper:
                 str(bottom_partner) if bottom_partner else None,
             )
 
-        if isinstance(partners_involved, dict):
-            top_partner = (
-                partners_involved.get("upper")
-                or partners_involved.get("top")
-            )
-            bottom_partner = (
-                partners_involved.get("lower")
-                or partners_involved.get("bottom")
-            )
-
-            return (
-                self._extract_partner_name(top_partner),
-                self._extract_partner_name(bottom_partner),
-            )
-
         return None, None
-
-    def _extract_partner_name(self, value: Any) -> str | None:
-        if isinstance(value, dict):
-            partner = value.get("partner") or value.get("family") or value.get("name")
-            return str(partner) if partner else None
-
-        if value:
-            return str(value)
-
-        return None
 
     def _normalize_material_compact(self, material: str | None) -> str:
         if not material:

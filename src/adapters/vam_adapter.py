@@ -20,12 +20,15 @@ class VamAdapter(BaseAdapter):
     DROPDOWN_INDEX_MAP = {
         "OD (in)": 0,
         "Weight / WT (lb/ft)": 1,
+        "Pipe specification": 2,
         "Material Family": 3,
         "Yield Strength (ksi)": 4,
         "Grade": 5,
         "Drift Option": 6,
     }
 
+    DEFAULT_PIPE_SPECIFICATION = "API"
+    DEFAULT_MATERIAL_FAMILY = "Carbon Steel"
     DEFAULT_DRIFT_OPTION = "API Drift"
     NA = "NA"
 
@@ -45,7 +48,7 @@ class VamAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "vam_adapter_v2.3")
+        self.logger = setup_logger(self.logs_dir, "vam_adapter_v2.4")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(
@@ -77,9 +80,17 @@ class VamAdapter(BaseAdapter):
 
         filters = self._build_filters_from_mapped_data(mapped_data)
 
-        for field_label, value in filters.items():
+        for field_label, value in filters:
             if value is None:
                 continue
+
+            if field_label == "Grade":
+                self.select_grade_option_if_available(
+                    material_family=value.get("material_family"),
+                    yield_strength=value.get("yield_strength"),
+                )
+                continue
+
             self.select_dropdown_option_by_index(field_label, value)
 
         self.select_connection(connection_name)
@@ -93,17 +104,24 @@ class VamAdapter(BaseAdapter):
             mapped_data=mapped_data,
         )
 
-    def _build_filters_from_mapped_data(self, mapped_data: dict[str, Any]) -> dict[str, Any]:
+    def _build_filters_from_mapped_data(self, mapped_data: dict[str, Any]) -> list[tuple[str, Any]]:
         connection = mapped_data.get("connection") or {}
 
-        return {
-            "OD (in)": connection.get("od"),
-            "Weight / WT (lb/ft)": connection.get("weight"),
-            # "Material Family": connection.get("material_family"),
-            "Yield Strength (ksi)": connection.get("yield_strength"),
-            # "Grade" 暂不考虑
-            "Drift Option": self.DEFAULT_DRIFT_OPTION,
-        }
+        return [
+            ("OD (in)", connection.get("od")),
+            ("Weight / WT (lb/ft)", connection.get("weight")),
+            ("Pipe specification", self.DEFAULT_PIPE_SPECIFICATION),
+            ("Material Family", self.DEFAULT_MATERIAL_FAMILY),
+            ("Yield Strength (ksi)", connection.get("yield_strength")),
+            (
+                "Grade",
+                {
+                    "material_family": connection.get("material_family"),
+                    "yield_strength": connection.get("yield_strength"),
+                },
+            ),
+            ("Drift Option", self.DEFAULT_DRIFT_OPTION),
+        ]
 
     def open_configurator(self) -> None:
         self.page.goto(self.configurator_url, wait_until="domcontentloaded")
@@ -154,6 +172,48 @@ class VamAdapter(BaseAdapter):
             self.page.wait_for_load_state("networkidle", timeout=5000)
         except Exception:
             pass
+
+    def select_grade_option_if_available(
+        self,
+        material_family: str | None,
+        yield_strength: str | None,
+    ) -> bool:
+        if not material_family or not yield_strength:
+            self.logger.info(
+                "Skip VAM Grade selection because material_family or yield_strength is missing. "
+                "material_family=%s, yield_strength=%s",
+                material_family,
+                yield_strength,
+            )
+            return False
+
+        field_label = "Grade"
+        dropdown_index = self.DROPDOWN_INDEX_MAP[field_label]
+        trigger = self._get_dropdown_trigger_by_index(dropdown_index, field_label)
+
+        try:
+            trigger.scroll_into_view_if_needed()
+            self.page.wait_for_timeout(300)
+            trigger.click(force=True)
+        except Exception:
+            self.logger.warning(
+                "Failed to open VAM Grade dropdown. Skip Grade selection."
+            )
+            return False
+
+        selected = self._select_grade_option_from_overlay(
+            material_family=material_family,
+            yield_strength=yield_strength,
+            field_label=field_label,
+        )
+
+        self.page.wait_for_timeout(1200)
+        try:
+            self.page.wait_for_load_state("networkidle", timeout=5000)
+        except Exception:
+            pass
+
+        return selected
 
     def _get_filter_area(self):
         candidates = [
@@ -310,6 +370,169 @@ class VamAdapter(BaseAdapter):
         target_option.scroll_into_view_if_needed()
         self.page.wait_for_timeout(300)
         target_option.click(force=True)
+
+    def _select_grade_option_from_overlay(
+        self,
+        material_family: str,
+        yield_strength: str,
+        field_label: str,
+    ) -> bool:
+        overlay_candidates = [
+            self.page.locator("div[role='listbox']").first,
+            self.page.locator(".mat-autocomplete-panel").first,
+            self.page.locator(".cdk-overlay-pane").first,
+        ]
+
+        overlay_found = False
+        for overlay in overlay_candidates:
+            try:
+                overlay.wait_for(state="visible", timeout=5000)
+                overlay_found = True
+                break
+            except Exception:
+                continue
+
+        if not overlay_found:
+            self.logger.warning(
+                "Dropdown overlay not found for field [%s]. Skip Grade selection.",
+                field_label,
+            )
+            return False
+
+        option_candidates = self.page.locator("[role='option'], mat-option")
+        matched_option = None
+        matched_text = None
+
+        try:
+            count = option_candidates.count()
+        except Exception:
+            count = 0
+
+        for i in range(count):
+            try:
+                option = option_candidates.nth(i)
+
+                if not option.is_visible(timeout=500):
+                    continue
+
+                option_text = option.inner_text(timeout=1000).strip()
+                if not option_text:
+                    continue
+
+                if self._grade_option_matches(
+                    option_text=option_text,
+                    material_family=material_family,
+                    yield_strength=yield_strength,
+                ):
+                    matched_option = option
+                    matched_text = option_text
+                    break
+
+            except Exception:
+                continue
+
+        if matched_option is None:
+            self.logger.info(
+                "No VAM Grade option matched. Skip Grade selection. "
+                "material_family=%s, yield_strength=%s",
+                material_family,
+                yield_strength,
+            )
+
+            try:
+                self.page.keyboard.press("Escape")
+            except Exception:
+                pass
+
+            return False
+
+        matched_option.scroll_into_view_if_needed()
+        self.page.wait_for_timeout(300)
+        matched_option.click(force=True)
+
+        self.logger.info(
+            "Selected VAM Grade option: %s for material_family=%s, yield_strength=%s",
+            matched_text,
+            material_family,
+            yield_strength,
+        )
+
+        return True
+
+    def _grade_option_matches(
+        self,
+        option_text: str,
+        material_family: str,
+        yield_strength: str,
+    ) -> bool:
+        parts = self._split_grade_option_parts(option_text)
+        if not parts:
+            return False
+
+        used_indexes: set[int] = set()
+
+        targets = [
+            self._normalize_grade_match_token(material_family),
+            self._normalize_grade_match_token(
+                self._normalize_strength_for_grade_match(yield_strength)
+            ),
+        ]
+
+        for target in targets:
+            if not target:
+                return False
+
+            matched_index = None
+
+            for index, part in enumerate(parts):
+                if index in used_indexes:
+                    continue
+
+                normalized_part = self._normalize_grade_match_token(part)
+
+                if target in normalized_part:
+                    matched_index = index
+                    break
+
+            if matched_index is None:
+                return False
+
+            used_indexes.add(matched_index)
+
+        return True
+
+    def _split_grade_option_parts(self, option_text: str) -> list[str]:
+        text = str(option_text or "").replace("\u00a0", " ")
+        return [
+            part.strip()
+            for part in re.split(r"\s+", text)
+            if part and part.strip()
+        ]
+
+    def _normalize_grade_match_token(self, value: str | None) -> str:
+        if not value:
+            return ""
+
+        text = str(value).upper()
+        text = re.sub(r"[^A-Z0-9.]+", "", text)
+
+        return text
+
+    def _normalize_strength_for_grade_match(self, value: str | None) -> str:
+        if not value:
+            return ""
+
+        text = str(value).strip()
+
+        try:
+            number = float(text)
+        except ValueError:
+            return text
+
+        if number.is_integer():
+            return str(int(number))
+
+        return f"{number:.6f}".rstrip("0").rstrip(".")
 
     def select_connection(self, connection_name: str) -> None:
         container = self._get_connection_container()

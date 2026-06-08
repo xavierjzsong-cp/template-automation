@@ -31,50 +31,55 @@ class VamMapper(BaseMapper):
                 "name": connection.get("name"),
                 "od": self._map_od(connection.get("od")),
                 "weight": self._map_weight(connection.get("weight")),
-                #"material_family": self._map_material_family(product_material_grade),
+                "material_family": self._map_material_family(product_material_grade),
                 "yield_strength": self._map_yield_strength(product_material_grade),
                 "type": connection.get("type"),
             },
         }
 
-    # 也可以做成映射表
-    # def _map_material_family(self, grade: str | None) -> str | None:
-    #     if not grade:
-    #         return None
-    #
-    #     g = grade.upper().replace("[", "(").replace("]", ")").strip()
-    #
-    #     # if g in {"N/A", "NA"}:
-    #     #     return "N/A"
-    #
-    #     # if "DEEP WELL" in g:
-    #     #     return "Deep well"
-    #
-    #     if g.startswith("13CR"):
-    #         return "13% Chromium (13Cr)"
-    #
-    #     if g.startswith("S13CR") or g.startswith("SUPER 13"):
-    #         return "Super 13% Chromium (S13Cr)"
-    #
-    #     # if g in {"L80", "P110", "C90", "T95"} or "CARBON" in g:
-    #     #     return "Carbon Steel"
-    #
-    #     if "CRA" in g:
-    #         return "Corrosion Resistant Alloy (CRA)"
-    #
-    #     return None
-
-    def _map_yield_strength(self, grade: str | None) -> str | None:
-        if not grade:
+    def _map_material_family(self, grade: str | None) -> str | None:
+        parsed = self._parse_product_material_grade(grade)
+        if parsed is None:
             return None
 
-        match = re.search(r"[\(\[](\d+(?:\.\d+)?)[\)\]]", grade)
+        return parsed["material_family"]
+
+    def _map_yield_strength(self, grade: str | None) -> str | None:
+        parsed = self._parse_product_material_grade(grade)
+        if parsed is None:
+            return None
+
+        return parsed["yield_strength"]
+
+    def _parse_product_material_grade(
+        self,
+        product_material_grade: str | None,
+    ) -> dict[str, str] | None:
+        if not product_material_grade:
+            return None
+
+        text = product_material_grade.strip().upper()
+        text = re.sub(r"\s+", "", text)
+
+        match = re.match(
+            r"^(?P<family>[A-Z0-9]+)\((?P<strength>\d+(?:\.\d+)?)\)$",
+            text,
+        )
+
         if not match:
             return None
 
-        value = match.group(1)
+        return {
+            "material_family": match.group("family"),
+            "yield_strength": self._normalize_strength(match.group("strength")),
+        }
+
+    def _normalize_strength(self, strength: str) -> str:
+        value = strength.strip()
+
         if value.endswith(".0"):
             value = value[:-2]
+
         return value
 
     def _map_od(self, od: str | None) -> str | None:

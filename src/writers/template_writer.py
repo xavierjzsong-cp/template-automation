@@ -23,12 +23,14 @@ class TemplateWriter:
         template_path: str | Path,
         output_dir: str | Path = "output_docs",
         user_name: str | None = None,
+        coating_data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         formatted = self._build_template_fields(
             parsed=parsed,
             top_adapter=top_adapter,
             bottom_adapter=bottom_adapter,
             user_name=user_name,
+            coating_data=coating_data,
         )
 
         print("\n=== Formatted Data ===")
@@ -54,6 +56,7 @@ class TemplateWriter:
         top_adapter: dict[str, Any] | None,
         bottom_adapter: dict[str, Any] | None,
         user_name: str | None = None,
+        coating_data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         connections = parsed.get("connections") or {}
         upper = connections.get("upper") or {}
@@ -95,6 +98,7 @@ class TemplateWriter:
             "description": formatted_description,
             "material": material,
             "overall_length": self._format_overall_length(parsed.get("overall_length")),
+            "coating": coating_data or {},
             "top_thread": {
                 "thread": top_thread_text,
                 **(top_adapter or {}),
@@ -168,7 +172,7 @@ class TemplateWriter:
 
         text = re.sub(r"\s+", " ", text).strip()
         return text
-    
+
     def _format_user_name(self, user_name: str | None) -> str | None:
         if not user_name:
             return None
@@ -567,6 +571,11 @@ class TemplateWriter:
         self._write_if_editable(sheet, "B30", (formatted.get("bottom_thread") or {}).get("thread"))
         self._write_if_editable(sheet, "B34", formatted.get("qcp"))
         self._write_if_editable(sheet, "H9", formatted.get("overall_length"))
+
+        coating = formatted.get("coating") or {}
+        self._write_if_editable(sheet, "B29", coating.get("top_thread_coating"))
+        self._write_if_editable(sheet, "B31", coating.get("bottom_thread_coating"))
+        self._write_if_editable(sheet, "B32", coating.get("body_coating"))
 
         self._write_if_editable(
             sheet,
