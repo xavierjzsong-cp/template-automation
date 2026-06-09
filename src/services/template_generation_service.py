@@ -11,10 +11,13 @@ from src.routers.partner_router import PartnerRouter
 from src.mappers.vam_mapper import VamMapper
 from src.mappers.tsh_mapper import TshMapper
 from src.mappers.jfe_mapper import JfeMapper
+from src.mappers.ht_mapper import HtMapper
+from src.mappers.coating_mapper import CoatingMapper
 
 from src.adapters.vam_adapter import VamAdapter
 from src.adapters.tsh_adapter import TshAdapter
 from src.adapters.jfe_adapter import JfeAdapter
+from src.adapters.ht_adapter import HtAdapter
 
 from src.writers.template_writer import TemplateWriter
 
@@ -36,6 +39,7 @@ class GenerationResult:
     parsed: dict[str, Any]
     routing_result: dict[str, Any]
     mapped_results: list[dict[str, Any]]
+    coating_data: dict[str, Any]
     top_adapter: dict[str, Any] | None
     bottom_adapter: dict[str, Any] | None
     writer_result: dict[str, Any]
@@ -70,25 +74,28 @@ class TemplateGenerationService:
         request: GenerationRequest,
         status_callback: StatusCallback | None = None,
     ) -> GenerationResult:
+        self._status(status_callback, "Checking input information...")
         self._validate_request(request)
 
-        self._status(status_callback, "Loading partner configuration...")
+        self._status(status_callback, "Loading configuration...")
         partners_config = self._load_partners_config(self.partners_config_path)
 
         parser = POTSDocParser()
         router = PartnerRouter()
         writer = TemplateWriter()
+        coating_mapper = CoatingMapper()
 
         mapper_registry = {
             "VAM": VamMapper(),
             "TSH": TshMapper(),
             "JFE": JfeMapper(),
+            "HT": HtMapper(),
         }
 
-        self._status(status_callback, "Parsing input PDF...")
+        self._status(status_callback, "Reading input document...")
         parsed = parser.parse(request.input_path)
 
-        self._status(status_callback, "Routing partner targets...")
+        self._status(status_callback, "Identifying connection details...")
         routing_result = router.route(parsed)
 
         targets = routing_result.get("targets") or []
@@ -110,14 +117,19 @@ class TemplateGenerationService:
                     f"Target={target}"
                 )
 
-            self._status(status_callback, f"Mapping {partner} / {side}...")
             mapped_result = mapper.build_mapped_data(
                 target=target,
                 shared_data=routing_result.get("shared_data"),
             )
             mapped_results.append(mapped_result)
 
-            self._status(status_callback, f"Running {partner} adapter for {side} thread...")
+            if side == "upper":
+                self._status(status_callback, "Retrieving top thread data...")
+            elif side == "lower":
+                self._status(status_callback, "Retrieving bottom thread data...")
+            else:
+                self._status(status_callback, "Retrieving thread data...")
+
             adapter_result = self._run_adapter_for_target(
                 partner=partner,
                 side=side,
@@ -131,7 +143,9 @@ class TemplateGenerationService:
             elif side == "lower":
                 bottom_adapter = adapter_result
 
-        self._status(status_callback, "Writing data into template...")
+        coating_data = coating_mapper.build_mapped_data(routing_result)
+
+        self._status(status_callback, "Filling Excel template...")
         writer_result = writer.write(
             parsed=parsed,
             top_adapter=top_adapter,
@@ -139,17 +153,16 @@ class TemplateGenerationService:
             template_path=request.template_path,
             output_dir=request.output_dir,
             user_name=request.user_name,
+            coating_data=coating_data,
         )
 
-        self._status(
-            status_callback,
-            f"Completed. Output file: {writer_result.get('output_file')}",
-        )
+        self._status(status_callback, "Saving output file...")
 
         return GenerationResult(
             parsed=parsed,
             routing_result=routing_result,
             mapped_results=mapped_results,
+            coating_data=coating_data,
             top_adapter=top_adapter,
             bottom_adapter=bottom_adapter,
             writer_result=writer_result,
@@ -219,6 +232,21 @@ class TemplateGenerationService:
                 base_url=base_url,
                 datasheet_url=datasheet_url,
                 blanking_url=blanking_url,
+                logs_dir=self.project_root / "logs",
+                headless=headless,
+                slow_mo=300,
+                timeout_ms=10000,
+                navigation_timeout_ms=60000,
+            )
+
+        elif partner == "HT":
+            datasheet_url = urls.get("connection_datasheet")
+            if not datasheet_url:
+                raise ValueError("HT config missing urls.connection_datasheet")
+
+            adapter = HtAdapter(
+                base_url=base_url,
+                datasheet_url=datasheet_url,
                 logs_dir=self.project_root / "logs",
                 headless=headless,
                 slow_mo=300,

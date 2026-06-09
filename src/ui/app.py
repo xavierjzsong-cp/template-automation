@@ -18,12 +18,24 @@ class TemplateAutomationApp(ctk.CTk):
 
     SETTINGS_PATH = Path("config") / "ui_settings.json"
 
+    COLOR_BACKGROUND = "#F4F7FA"
+    COLOR_CARD = "#FFFFFF"
+    COLOR_PRIMARY = "#1F5F8B"
+    COLOR_PRIMARY_HOVER = "#174D73"
+    COLOR_SECONDARY = "#EAF4FA"
+    COLOR_TEXT = "#1F2933"
+    COLOR_MUTED = "#64748B"
+    COLOR_BORDER = "#D7E0E7"
+    COLOR_SUCCESS = "#2E7D32"
+    COLOR_ERROR = "#B42318"
+
     def __init__(self) -> None:
         super().__init__()
 
         self.title("Template Automation Tool")
-        self.geometry("820x620")
-        self.minsize(760, 560)
+        self.geometry("860x600")
+        self.minsize(780, 560)
+        self.configure(fg_color=self.COLOR_BACKGROUND)
 
         ctk.set_appearance_mode("Light")
         ctk.set_default_color_theme("blue")
@@ -37,121 +49,186 @@ class TemplateAutomationApp(ctk.CTk):
         self.output_dir_var = ctk.StringVar()
         self.show_browser_var = ctk.BooleanVar(value=True)
 
+        self.progress_var = ctk.DoubleVar(value=0)
+        self.progress_percent_var = ctk.StringVar(value="0%")
+
+        self.generation_started = False
+        self.browser_warmup_started = False
+        self.browser_warmup_running = False
+
         self._load_settings()
         self._build_ui()
+
+        self.after(1000, self._start_browser_warmup_if_idle)
 
     def _build_ui(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
-        header = ctk.CTkFrame(self, corner_radius=0)
-        header.grid(row=0, column=0, sticky="ew")
+        header = ctk.CTkFrame(
+            self,
+            corner_radius=0,
+            fg_color=self.COLOR_BACKGROUND,
+        )
+        header.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
 
         title = ctk.CTkLabel(
             header,
             text="Template Automation Tool",
-            font=ctk.CTkFont(size=24, weight="bold"),
+            font=ctk.CTkFont(size=26, weight="bold"),
+            text_color=self.COLOR_TEXT,
         )
-        title.pack(anchor="w", padx=24, pady=(18, 4))
+        title.pack(anchor="w", padx=28, pady=(22, 18))
 
-        subtitle = ctk.CTkLabel(
-            header,
-            text="Select input files, template file, and output folder to generate the completed template.",
-            font=ctk.CTkFont(size=13),
+        main = ctk.CTkFrame(
+            self,
+            fg_color=self.COLOR_CARD,
+            corner_radius=12,
+            border_width=1,
+            border_color=self.COLOR_BORDER,
         )
-        subtitle.pack(anchor="w", padx=24, pady=(0, 18))
-
-        main = ctk.CTkFrame(self)
-        main.grid(row=1, column=0, sticky="nsew", padx=24, pady=20)
+        main.grid(row=1, column=0, sticky="nsew", padx=28, pady=(0, 24))
         main.grid_columnconfigure(1, weight=1)
-        main.grid_rowconfigure(6, weight=1)
 
-        self._add_label(main, "User Name", row=0)
-        user_entry = ctk.CTkEntry(main, textvariable=self.user_name_var)
-        user_entry.grid(row=0, column=1, columnspan=2, sticky="ew", padx=(12, 0), pady=8)
+        for row_index in range(8):
+            main.grid_rowconfigure(row_index, weight=0)
+        main.grid_rowconfigure(7, weight=1)
 
-        self._add_label(main, "Input POTS PDF", row=1)
-        input_entry = ctk.CTkEntry(main, textvariable=self.input_pdf_var)
-        input_entry.grid(row=1, column=1, sticky="ew", padx=(12, 8), pady=8)
-        input_button = ctk.CTkButton(
+        section_title = ctk.CTkLabel(
+            main,
+            text="Input Settings",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=self.COLOR_TEXT,
+        )
+        section_title.grid(row=0, column=0, columnspan=3, sticky="w", padx=24, pady=(22, 10))
+
+        self._add_label(main, "User Name", row=1)
+        user_entry = self._create_entry(main, self.user_name_var)
+        user_entry.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(14, 24), pady=8)
+
+        self._add_label(main, "Input POTS File", row=2)
+        input_entry = self._create_entry(main, self.input_pdf_var)
+        input_entry.grid(row=2, column=1, sticky="ew", padx=(14, 10), pady=8)
+        input_button = self._create_primary_button(
             main,
             text="Browse",
-            width=110,
+            width=90,
+            height=28,
             command=self._browse_input_pdf,
         )
-        input_button.grid(row=1, column=2, sticky="e", pady=8)
+        input_button.grid(row=2, column=2, sticky="e", padx=(0, 24), pady=8)
 
-        self._add_label(main, "Template Excel File", row=2)
-        template_entry = ctk.CTkEntry(main, textvariable=self.template_file_var)
-        template_entry.grid(row=2, column=1, sticky="ew", padx=(12, 8), pady=8)
-        template_button = ctk.CTkButton(
+        self._add_label(main, "Template Excel File", row=3)
+        template_entry = self._create_entry(main, self.template_file_var)
+        template_entry.grid(row=3, column=1, sticky="ew", padx=(14, 10), pady=8)
+        template_button = self._create_primary_button(
             main,
             text="Browse",
-            width=110,
+            width=90,
+            height=28,
             command=self._browse_template_file,
         )
-        template_button.grid(row=2, column=2, sticky="e", pady=8)
+        template_button.grid(row=3, column=2, sticky="e", padx=(0, 24), pady=8)
 
-        self._add_label(main, "Output Folder", row=3)
-        output_entry = ctk.CTkEntry(main, textvariable=self.output_dir_var)
-        output_entry.grid(row=3, column=1, sticky="ew", padx=(12, 8), pady=8)
-        output_button = ctk.CTkButton(
+        self._add_label(main, "Output Folder", row=4)
+        output_entry = self._create_entry(main, self.output_dir_var)
+        output_entry.grid(row=4, column=1, sticky="ew", padx=(14, 10), pady=8)
+        output_button = self._create_primary_button(
             main,
             text="Browse",
-            width=110,
+            width=90,
+            height=28,
             command=self._browse_output_dir,
         )
-        output_button.grid(row=3, column=2, sticky="e", pady=8)
+        output_button.grid(row=4, column=2, sticky="e", padx=(0, 24), pady=8)
 
         options_frame = ctk.CTkFrame(main, fg_color="transparent")
-        options_frame.grid(row=4, column=1, columnspan=2, sticky="w", padx=(12, 0), pady=8)
+        options_frame.grid(row=5, column=1, columnspan=2, sticky="w", padx=(14, 24), pady=(10, 8))
 
         show_browser_checkbox = ctk.CTkCheckBox(
             options_frame,
             text="Show browser during automation",
             variable=self.show_browser_var,
+            fg_color=self.COLOR_PRIMARY,
+            hover_color=self.COLOR_PRIMARY_HOVER,
+            border_color=self.COLOR_MUTED,
+            text_color=self.COLOR_TEXT,
         )
         show_browser_checkbox.pack(anchor="w")
 
         button_frame = ctk.CTkFrame(main, fg_color="transparent")
-        button_frame.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(18, 12))
+        button_frame.grid(row=6, column=0, columnspan=3, sticky="ew", padx=24, pady=(20, 16))
         button_frame.grid_columnconfigure(0, weight=1)
 
-        self.generate_button = ctk.CTkButton(
+        self.generate_button = self._create_primary_button(
             button_frame,
             text="Generate Template",
-            height=40,
+            height=42,
             command=self._start_generation,
         )
-        self.generate_button.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.generate_button.grid(row=0, column=0, sticky="ew", padx=(0, 10))
 
         self.open_output_button = ctk.CTkButton(
             button_frame,
             text="Open Output Folder",
-            height=40,
-            width=160,
+            height=42,
+            width=170,
+            fg_color=self.COLOR_SECONDARY,
+            hover_color="#D7EAF5",
+            text_color=self.COLOR_PRIMARY,
             state="disabled",
             command=self._open_output_folder,
         )
         self.open_output_button.grid(row=0, column=1, sticky="e")
 
-        status_label = ctk.CTkLabel(
+        self.progress_card = ctk.CTkFrame(
             main,
-            text="Status",
-            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=self.COLOR_BACKGROUND,
+            corner_radius=10,
+            border_width=1,
+            border_color=self.COLOR_BORDER,
         )
-        status_label.grid(row=6, column=0, sticky="nw", pady=(8, 0))
+        self.progress_card.grid_columnconfigure(0, weight=1)
 
-        self.status_textbox = ctk.CTkTextbox(main, height=190)
-        self.status_textbox.grid(
-            row=6,
-            column=1,
-            columnspan=2,
-            sticky="nsew",
-            padx=(12, 0),
-            pady=(8, 0),
+        progress_header = ctk.CTkFrame(self.progress_card, fg_color="transparent")
+        progress_header.grid(row=0, column=0, sticky="ew", padx=18, pady=(16, 6))
+        progress_header.grid_columnconfigure(0, weight=1)
+
+        progress_title = ctk.CTkLabel(
+            progress_header,
+            text="Progress",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=self.COLOR_TEXT,
         )
-        self._append_status("Ready.")
+        progress_title.grid(row=0, column=0, sticky="w")
+
+        self.progress_percent_label = ctk.CTkLabel(
+            progress_header,
+            textvariable=self.progress_percent_var,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=self.COLOR_PRIMARY,
+        )
+        self.progress_percent_label.grid(row=0, column=1, sticky="e")
+
+        self.progress_bar = ctk.CTkProgressBar(
+            self.progress_card,
+            height=14,
+            progress_color=self.COLOR_PRIMARY,
+            fg_color=self.COLOR_BORDER,
+        )
+        self.progress_bar.grid(row=1, column=0, sticky="ew", padx=18, pady=(4, 10))
+        self.progress_bar.set(0)
+
+        self.status_message_label = ctk.CTkLabel(
+            self.progress_card,
+            text="Ready.",
+            font=ctk.CTkFont(size=13),
+            text_color=self.COLOR_MUTED,
+            anchor="w",
+            justify="left",
+            height=20,
+        )
+        self.status_message_label.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
 
     def _add_label(self, parent, text: str, row: int) -> None:
         label = ctk.CTkLabel(
@@ -159,8 +236,42 @@ class TemplateAutomationApp(ctk.CTk):
             text=text,
             anchor="w",
             font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=self.COLOR_TEXT,
         )
-        label.grid(row=row, column=0, sticky="w", pady=8)
+        label.grid(row=row, column=0, sticky="w", padx=(24, 0), pady=8)
+
+    def _create_entry(self, parent, variable: ctk.StringVar) -> ctk.CTkEntry:
+        return ctk.CTkEntry(
+            parent,
+            textvariable=variable,
+            height=34,
+            border_color=self.COLOR_BORDER,
+            fg_color="#FFFFFF",
+            text_color=self.COLOR_TEXT,
+        )
+
+    def _create_primary_button(
+        self,
+        parent,
+        text: str,
+        command,
+        width: int | None = None,
+        height: int = 34,
+    ) -> ctk.CTkButton:
+        button_kwargs = {
+            "master": parent,
+            "text": text,
+            "height": height,
+            "fg_color": self.COLOR_PRIMARY,
+            "hover_color": self.COLOR_PRIMARY_HOVER,
+            "text_color": "#FFFFFF",
+            "command": command,
+        }
+
+        if width is not None:
+            button_kwargs["width"] = width
+
+        return ctk.CTkButton(**button_kwargs)
 
     def _browse_input_pdf(self) -> None:
         path = filedialog.askopenfilename(
@@ -198,6 +309,8 @@ class TemplateAutomationApp(ctk.CTk):
             self._save_settings()
 
     def _start_generation(self) -> None:
+        self.generation_started = True
+
         try:
             request = self._build_generation_request()
         except Exception as exc:
@@ -209,8 +322,8 @@ class TemplateAutomationApp(ctk.CTk):
         self.open_output_button.configure(state="disabled")
         self.generate_button.configure(state="disabled", text="Generating...")
 
-        self._append_status("")
-        self._append_status("Starting generation...")
+        self._show_progress_area()
+        self._set_progress(0, "Starting generation...")
 
         worker = threading.Thread(
             target=self._run_generation_worker,
@@ -218,6 +331,74 @@ class TemplateAutomationApp(ctk.CTk):
             daemon=True,
         )
         worker.start()
+
+    def _show_progress_area(self) -> None:
+        self.progress_card.grid(
+            row=7,
+            column=0,
+            columnspan=3,
+            sticky="ew",
+            padx=24,
+            pady=(0, 24),
+        )
+        self.progress_card.update_idletasks()
+
+    def _start_browser_warmup_if_idle(self) -> None:
+        if self.generation_started:
+            return
+
+        if self.browser_warmup_started:
+            return
+
+        self.browser_warmup_started = True
+        self.browser_warmup_running = True
+
+        worker = threading.Thread(
+            target=self._warmup_browser_worker,
+            daemon=True,
+        )
+        worker.start()
+
+    def _warmup_browser_worker(self) -> None:
+        playwright = None
+        browser = None
+        context = None
+
+        try:
+            from playwright.sync_api import sync_playwright
+
+            playwright = sync_playwright().start()
+            browser = playwright.chromium.launch(
+                headless=True,
+                slow_mo=0,
+            )
+            context = browser.new_context()
+            page = context.new_page()
+            page.goto("about:blank")
+
+        except Exception:
+            pass
+
+        finally:
+            try:
+                if context is not None:
+                    context.close()
+            except Exception:
+                pass
+
+            try:
+                if browser is not None:
+                    browser.close()
+            except Exception:
+                pass
+
+            try:
+                if playwright is not None:
+                    playwright.stop()
+            except Exception:
+                pass
+
+            self.browser_warmup_running = False
 
     def _run_generation_worker(self, request: GenerationRequest) -> None:
         try:
@@ -243,7 +424,9 @@ class TemplateAutomationApp(ctk.CTk):
         self.generate_button.configure(state="normal", text="Generate Template")
         self.open_output_button.configure(state="normal")
 
-        self._append_status(f"Success. Output file: {output_file}")
+        self._set_progress(100, "Completed successfully.")
+        self.status_message_label.configure(text_color=self.COLOR_SUCCESS)
+
         messagebox.showinfo(
             "Generation Completed",
             f"Template generated successfully:\n\n{output_file}",
@@ -253,7 +436,9 @@ class TemplateAutomationApp(ctk.CTk):
         self.generate_button.configure(state="normal", text="Generate Template")
         self.open_output_button.configure(state="disabled")
 
-        self._append_status(f"Failed: {exc}")
+        self._set_progress(self._get_current_progress_percent(), f"Failed: {exc}")
+        self.status_message_label.configure(text_color=self.COLOR_ERROR)
+
         messagebox.showerror(
             "Generation Failed",
             str(exc),
@@ -285,12 +470,82 @@ class TemplateAutomationApp(ctk.CTk):
             show_browser=self.show_browser_var.get(),
         )
 
-    def _append_status(self, message: str) -> None:
-        self.status_textbox.insert("end", message + "\n")
-        self.status_textbox.see("end")
-
     def _threadsafe_status(self, message: str) -> None:
-        self.after(0, lambda: self._append_status(message))
+        self.after(0, lambda: self._handle_service_status(message))
+
+    def _handle_service_status(self, message: str) -> None:
+        progress, short_message = self._map_status_to_progress(message)
+        self._set_progress(progress, short_message)
+
+    def _map_status_to_progress(self, message: str) -> tuple[int, str]:
+        text = str(message or "").strip()
+        normalized = text.lower()
+
+        status_steps = [
+            (
+                10,
+                ["validating", "validate", "checking input"],
+                "Checking input information...",
+            ),
+            (
+                22,
+                ["parsing", "parsed", "reading input document", "document"],
+                "Reading input document...",
+            ),
+            (
+                35,
+                ["routing", "route", "identifying connection", "connection details"],
+                "Identifying connection details...",
+            ),
+            (
+                52,
+                ["top thread", "upper"],
+                "Retrieving top thread data...",
+            ),
+            (
+                72,
+                ["bottom thread", "lower"],
+                "Retrieving bottom thread data...",
+            ),
+            (
+                88,
+                ["writing", "template", "excel", "filling"],
+                "Filling Excel template...",
+            ),
+            (
+                95,
+                ["saved", "saving", "output"],
+                "Saving output file...",
+            ),
+        ]
+
+        for progress, keywords, display_text in status_steps:
+            for keyword in keywords:
+                if keyword in normalized:
+                    return progress, display_text
+
+        current_progress = self._get_current_progress_percent()
+        fallback_progress = min(max(current_progress + 2, 5), 95)
+
+        return fallback_progress, "Processing..."
+
+    def _set_progress(self, percent: int | float, message: str) -> None:
+        percent = int(max(0, min(100, percent)))
+
+        self.progress_var.set(percent)
+        self.progress_percent_var.set(f"{percent}%")
+
+        self.progress_bar.set(percent / 100)
+        self.status_message_label.configure(text=message)
+
+        if percent < 100:
+            self.status_message_label.configure(text_color=self.COLOR_MUTED)
+
+    def _get_current_progress_percent(self) -> int:
+        try:
+            return int(self.progress_var.get())
+        except Exception:
+            return 0
 
     def _open_output_folder(self) -> None:
         output_dir = self.output_dir_var.get().strip()
