@@ -32,6 +32,7 @@ class GenerationRequest:
     output_dir: Path
     user_name: str | None = None
     show_browser: bool = False
+    target_sheet_name: str | None = None
 
 
 @dataclass
@@ -43,6 +44,7 @@ class GenerationResult:
     top_adapter: dict[str, Any] | None
     bottom_adapter: dict[str, Any] | None
     writer_result: dict[str, Any]
+    target_sheet_name: str | None = None
 
     @property
     def output_file(self) -> str:
@@ -154,6 +156,7 @@ class TemplateGenerationService:
             output_dir=request.output_dir,
             user_name=request.user_name,
             coating_data=coating_data,
+            target_sheet_name=request.target_sheet_name,
         )
 
         self._status(status_callback, "Saving output file...")
@@ -166,6 +169,7 @@ class TemplateGenerationService:
             top_adapter=top_adapter,
             bottom_adapter=bottom_adapter,
             writer_result=writer_result,
+            target_sheet_name=request.target_sheet_name,
         )
 
     def _run_adapter_for_target(
@@ -311,6 +315,11 @@ class TemplateGenerationService:
                 ".xlsx, .xlsm, .xltx, or .xltm"
             )
 
+        target_sheet_name = str(request.target_sheet_name or "").strip()
+        if not target_sheet_name:
+            raise ValueError("Target sheet is required.")
+
+        request.target_sheet_name = target_sheet_name
         request.output_dir.mkdir(parents=True, exist_ok=True)
 
     def _load_partners_config(self, config_path: Path) -> dict[str, Any]:

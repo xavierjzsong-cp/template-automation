@@ -24,6 +24,7 @@ class TemplateWriter:
         output_dir: str | Path = "output_docs",
         user_name: str | None = None,
         coating_data: dict[str, Any] | None = None,
+        target_sheet_name: str | None = None,
     ) -> dict[str, Any]:
         formatted = self._build_template_fields(
             parsed=parsed,
@@ -40,6 +41,7 @@ class TemplateWriter:
             template_path=template_path,
             formatted=formatted,
             output_dir=output_dir,
+            target_sheet_name=target_sheet_name,
         )
 
         print(f"\nSaved output file: {output_file}")
@@ -48,6 +50,7 @@ class TemplateWriter:
             "parsed": parsed,
             "formatted": formatted,
             "output_file": str(output_file),
+            "target_sheet_name": target_sheet_name,
         }
 
     def _build_template_fields(
@@ -549,6 +552,7 @@ class TemplateWriter:
         template_path: str | Path,
         formatted: dict[str, Any],
         output_dir: str | Path,
+        target_sheet_name: str | None = None,
     ) -> Path:
         template_path = Path(template_path)
         output_dir = Path(output_dir)
@@ -559,8 +563,10 @@ class TemplateWriter:
 
         workbook = load_workbook(template_path)
 
-        # worksheet 先 hardcode，后面需补充判断逻辑
-        sheet = workbook.worksheets[3]
+        sheet = self._get_target_sheet(
+            workbook=workbook,
+            target_sheet_name=target_sheet_name,
+        )
 
         self._write_if_editable(sheet, "G1", formatted.get("user_name"))
         self._write_if_editable(sheet, "B6", formatted.get("part_number"))
@@ -681,6 +687,23 @@ class TemplateWriter:
         workbook.save(output_file)
 
         return output_file
+
+    def _get_target_sheet(self, workbook, target_sheet_name: str | None):
+        if not target_sheet_name:
+            raise ValueError("Target sheet name is required.")
+
+        target_sheet_name = str(target_sheet_name).strip()
+        if not target_sheet_name:
+            raise ValueError("Target sheet name is required.")
+
+        if target_sheet_name not in workbook.sheetnames:
+            available_sheets = ", ".join(workbook.sheetnames)
+            raise ValueError(
+                f"Target sheet not found in template: {target_sheet_name}. "
+                f"Available sheets: {available_sheets}"
+            )
+
+        return workbook[target_sheet_name]
 
     def _write_if_editable(self, sheet, cell_ref: str, value: Any) -> None:
         if value is None:

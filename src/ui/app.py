@@ -13,28 +13,24 @@ from src.services.template_generation_service import (
     TemplateGenerationService,
 )
 
+from src.ui.styles import AppStyle
 
-class TemplateAutomationApp(ctk.CTk):
+
+class TemplateAutomationApp(AppStyle, ctk.CTk):
 
     SETTINGS_PATH = Path("config") / "ui_settings.json"
 
-    COLOR_BACKGROUND = "#F4F7FA"
-    COLOR_CARD = "#FFFFFF"
-    COLOR_PRIMARY = "#1F5F8B"
-    COLOR_PRIMARY_HOVER = "#174D73"
-    COLOR_SECONDARY = "#EAF4FA"
-    COLOR_TEXT = "#1F2933"
-    COLOR_MUTED = "#64748B"
-    COLOR_BORDER = "#D7E0E7"
-    COLOR_SUCCESS = "#2E7D32"
-    COLOR_ERROR = "#B42318"
+    TEMPLATE_SHEET_OPTIONS = [
+        f"CP_ACCESSORY-{index:02d}"
+        for index in range(1, 21)
+    ]
 
     def __init__(self) -> None:
         super().__init__()
 
         self.title("Template Automation Tool")
-        self.geometry("860x600")
-        self.minsize(780, 560)
+        self.geometry("860x680")
+        self.minsize(780, 640)
         self.configure(fg_color=self.COLOR_BACKGROUND)
 
         ctk.set_appearance_mode("Light")
@@ -46,6 +42,7 @@ class TemplateAutomationApp(ctk.CTk):
         self.user_name_var = ctk.StringVar()
         self.input_pdf_var = ctk.StringVar()
         self.template_file_var = ctk.StringVar()
+        self.target_sheet_var = ctk.StringVar(value=self.TEMPLATE_SHEET_OPTIONS[0])
         self.output_dir_var = ctk.StringVar()
         self.show_browser_var = ctk.BooleanVar(value=True)
 
@@ -55,6 +52,9 @@ class TemplateAutomationApp(ctk.CTk):
         self.generation_started = False
         self.browser_warmup_started = False
         self.browser_warmup_running = False
+
+        self.target_sheet_dropdown_visible = False
+        self.target_sheet_result_widgets: list[ctk.CTkBaseClass] = []
 
         self._load_settings()
         self._build_ui()
@@ -88,11 +88,13 @@ class TemplateAutomationApp(ctk.CTk):
             border_color=self.COLOR_BORDER,
         )
         main.grid(row=1, column=0, sticky="nsew", padx=28, pady=(0, 24))
-        main.grid_columnconfigure(1, weight=1)
+        main.grid_columnconfigure(1, weight=0)
+        main.grid_columnconfigure(2, weight=0)
+        main.grid_columnconfigure(3, weight=1)
 
-        for row_index in range(8):
+        for row_index in range(10):
             main.grid_rowconfigure(row_index, weight=0)
-        main.grid_rowconfigure(7, weight=1)
+        main.grid_rowconfigure(9, weight=1)
 
         section_title = ctk.CTkLabel(
             main,
@@ -104,11 +106,11 @@ class TemplateAutomationApp(ctk.CTk):
 
         self._add_label(main, "User Name", row=1)
         user_entry = self._create_entry(main, self.user_name_var)
-        user_entry.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(14, 24), pady=8)
+        user_entry.grid(row=1, column=1, columnspan=2, sticky="w", padx=(14, 24), pady=8)
 
         self._add_label(main, "Input POTS File", row=2)
         input_entry = self._create_entry(main, self.input_pdf_var)
-        input_entry.grid(row=2, column=1, sticky="ew", padx=(14, 10), pady=8)
+        input_entry.grid(row=2, column=1, sticky="w", padx=(14, 10), pady=8)
         input_button = self._create_primary_button(
             main,
             text="Browse",
@@ -120,7 +122,7 @@ class TemplateAutomationApp(ctk.CTk):
 
         self._add_label(main, "Template Excel File", row=3)
         template_entry = self._create_entry(main, self.template_file_var)
-        template_entry.grid(row=3, column=1, sticky="ew", padx=(14, 10), pady=8)
+        template_entry.grid(row=3, column=1, sticky="w", padx=(14, 10), pady=8)
         template_button = self._create_primary_button(
             main,
             text="Browse",
@@ -130,9 +132,78 @@ class TemplateAutomationApp(ctk.CTk):
         )
         template_button.grid(row=3, column=2, sticky="e", padx=(0, 24), pady=8)
 
-        self._add_label(main, "Output Folder", row=4)
+        self._add_label(main, "Target Sheet", row=4)
+
+        target_sheet_input_frame = ctk.CTkFrame(
+            main,
+            fg_color="transparent",
+        )
+        target_sheet_input_frame.grid(
+            row=4,
+            column=1,
+            columnspan=2,
+            sticky="ew",
+            padx=(14, 24),
+            pady=8,
+        )
+        target_sheet_input_frame.grid_columnconfigure(0, weight=1)
+
+        self.target_sheet_entry = ctk.CTkEntry(
+            target_sheet_input_frame,
+            textvariable=self.target_sheet_var,
+            height=34,
+            border_color=self.COLOR_BORDER,
+            fg_color="#FFFFFF",
+            text_color=self.COLOR_TEXT,
+        )
+        self.target_sheet_entry.grid(row=0, column=0, sticky="ew")
+
+        self.target_sheet_entry.bind(
+            "<FocusIn>",
+            lambda event: self._show_target_sheet_dropdown(show_all=False),
+        )
+        self.target_sheet_entry.bind(
+            "<KeyRelease>",
+            lambda event: self._on_target_sheet_input_changed(),
+        )
+        self.target_sheet_entry.bind(
+            "<Escape>",
+            lambda event: self._hide_target_sheet_dropdown(),
+        )
+
+        self.target_sheet_dropdown_button = ctk.CTkButton(
+            target_sheet_input_frame,
+            text="▼",
+            width=42,
+            height=34,
+            fg_color=self.COLOR_PRIMARY,
+            hover_color=self.COLOR_PRIMARY_HOVER,
+            text_color="#FFFFFF",
+            command=self._toggle_target_sheet_dropdown,
+        )
+        self.target_sheet_dropdown_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
+
+        self.target_sheet_dropdown = ctk.CTkFrame(
+            main,
+            fg_color="#FFFFFF",
+            corner_radius=8,
+            border_width=1,
+            border_color=self.COLOR_BORDER,
+        )
+        self.target_sheet_dropdown.grid_columnconfigure(0, weight=1)
+
+        self.target_sheet_results_frame = ctk.CTkScrollableFrame(
+            self.target_sheet_dropdown,
+            fg_color="#FFFFFF",
+            corner_radius=6,
+            height=160,
+        )
+        self.target_sheet_results_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
+        self.target_sheet_results_frame.grid_columnconfigure(0, weight=1)
+
+        self._add_label(main, "Output Folder", row=6)
         output_entry = self._create_entry(main, self.output_dir_var)
-        output_entry.grid(row=4, column=1, sticky="ew", padx=(14, 10), pady=8)
+        output_entry.grid(row=6, column=1, sticky="w", padx=(14, 10), pady=8)
         output_button = self._create_primary_button(
             main,
             text="Browse",
@@ -140,10 +211,10 @@ class TemplateAutomationApp(ctk.CTk):
             height=28,
             command=self._browse_output_dir,
         )
-        output_button.grid(row=4, column=2, sticky="e", padx=(0, 24), pady=8)
+        output_button.grid(row=6, column=2, sticky="e", padx=(0, 24), pady=8)
 
         options_frame = ctk.CTkFrame(main, fg_color="transparent")
-        options_frame.grid(row=5, column=1, columnspan=2, sticky="w", padx=(14, 24), pady=(10, 8))
+        options_frame.grid(row=7, column=1, columnspan=2, sticky="w", padx=(14, 24), pady=(10, 8))
 
         show_browser_checkbox = ctk.CTkCheckBox(
             options_frame,
@@ -153,11 +224,12 @@ class TemplateAutomationApp(ctk.CTk):
             hover_color=self.COLOR_PRIMARY_HOVER,
             border_color=self.COLOR_MUTED,
             text_color=self.COLOR_TEXT,
+            command=self._save_settings,
         )
         show_browser_checkbox.pack(anchor="w")
 
         button_frame = ctk.CTkFrame(main, fg_color="transparent")
-        button_frame.grid(row=6, column=0, columnspan=3, sticky="ew", padx=24, pady=(20, 16))
+        button_frame.grid(row=8, column=0, columnspan=3, sticky="ew", padx=24, pady=(20, 16))
         button_frame.grid_columnconfigure(0, weight=1)
 
         self.generate_button = self._create_primary_button(
@@ -244,6 +316,7 @@ class TemplateAutomationApp(ctk.CTk):
         return ctk.CTkEntry(
             parent,
             textvariable=variable,
+            width=self.FIELD_WIDTH,
             height=34,
             border_color=self.COLOR_BORDER,
             fg_color="#FFFFFF",
@@ -308,20 +381,120 @@ class TemplateAutomationApp(ctk.CTk):
             self.output_dir_var.set(path)
             self._save_settings()
 
-    def _start_generation(self) -> None:
-        self.generation_started = True
+    def _toggle_target_sheet_dropdown(self) -> None:
+        if self.target_sheet_dropdown_visible:
+            self._hide_target_sheet_dropdown()
+        else:
+            self._show_target_sheet_dropdown(show_all=True)
 
+    def _show_target_sheet_dropdown(self, show_all: bool = False) -> None:
+        self._refresh_target_sheet_matches(show_all=show_all)
+
+        self.target_sheet_dropdown.grid(
+            row=5,
+            column=1,
+            columnspan=2,
+            sticky="ew",
+            padx=(14, 24),
+            pady=(0, 8),
+        )
+        self.target_sheet_dropdown_visible = True
+
+    def _hide_target_sheet_dropdown(self) -> None:
+        if self.target_sheet_dropdown_visible:
+            self.target_sheet_dropdown.grid_remove()
+        self.target_sheet_dropdown_visible = False
+
+    def _on_target_sheet_input_changed(self) -> None:
+        if not self.target_sheet_dropdown_visible:
+            self._show_target_sheet_dropdown(show_all=False)
+            return
+
+        self._refresh_target_sheet_matches(show_all=False)
+
+    def _refresh_target_sheet_matches(self, show_all: bool = False) -> None:
+        for widget in self.target_sheet_result_widgets:
+            widget.destroy()
+
+        self.target_sheet_result_widgets = []
+
+        query = self.target_sheet_var.get().strip()
+        matches = self._get_target_sheet_matches(query=query, show_all=show_all)
+
+        if matches:
+            target_height = min(180, max(40, len(matches) * 34 + 8))
+            self.target_sheet_results_frame.configure(height=target_height)
+
+            for row_index, sheet_name in enumerate(matches):
+                option_button = ctk.CTkButton(
+                    self.target_sheet_results_frame,
+                    text=sheet_name,
+                    height=30,
+                    fg_color="transparent",
+                    hover_color=self.COLOR_SECONDARY,
+                    text_color=self.COLOR_TEXT,
+                    corner_radius=4,
+                    anchor="w",
+                    command=lambda value=sheet_name: self._select_target_sheet_option(value),
+                )
+                option_button.grid(row=row_index, column=0, sticky="ew", padx=4, pady=2)
+                self.target_sheet_result_widgets.append(option_button)
+
+            return
+
+        self.target_sheet_results_frame.configure(height=44)
+        no_match_label = ctk.CTkLabel(
+            self.target_sheet_results_frame,
+            text="No predefined match.",
+            height=34,
+            anchor="w",
+            justify="left",
+            text_color=self.COLOR_MUTED,
+            font=ctk.CTkFont(size=13),
+        )
+        no_match_label.grid(row=0, column=0, sticky="ew", padx=8, pady=4)
+        self.target_sheet_result_widgets.append(no_match_label)
+
+    def _get_target_sheet_matches(self, query: str, show_all: bool = False) -> list[str]:
+        if show_all:
+            return self.TEMPLATE_SHEET_OPTIONS.copy()
+
+        normalized_query = self._normalize_target_sheet_text(query)
+
+        if not normalized_query:
+            return self.TEMPLATE_SHEET_OPTIONS.copy()
+
+        matches = []
+        for option in self.TEMPLATE_SHEET_OPTIONS:
+            normalized_option = self._normalize_target_sheet_text(option)
+            if normalized_query in normalized_option:
+                matches.append(option)
+
+        return matches
+
+    def _normalize_target_sheet_text(self, value: str) -> str:
+        return str(value or "").strip().upper().replace(" ", "")
+
+    def _select_target_sheet_option(self, sheet_name: str) -> None:
+        self.target_sheet_var.set(sheet_name)
+        self._hide_target_sheet_dropdown()
+        self._save_settings()
+
+    def _start_generation(self) -> None:
         try:
             request = self._build_generation_request()
         except Exception as exc:
             messagebox.showerror("Invalid Input", str(exc))
             return
 
+        self.generation_started = True
+
         self._save_settings()
         self.last_output_file = None
         self.open_output_button.configure(state="disabled")
         self.generate_button.configure(state="disabled", text="Generating...")
 
+        self._hide_target_sheet_dropdown()
         self._show_progress_area()
         self._set_progress(0, "Starting generation...")
 
@@ -334,7 +507,7 @@ class TemplateAutomationApp(ctk.CTk):
 
     def _show_progress_area(self) -> None:
         self.progress_card.grid(
-            row=7,
+            row=9,
             column=0,
             columnspan=3,
             sticky="ew",
@@ -449,6 +622,7 @@ class TemplateAutomationApp(ctk.CTk):
         input_path = Path(self.input_pdf_var.get().strip())
         template_path = Path(self.template_file_var.get().strip())
         output_dir = Path(self.output_dir_var.get().strip())
+        target_sheet_name = self.target_sheet_var.get().strip()
 
         if not user_name:
             raise ValueError("User Name is required.")
@@ -459,6 +633,9 @@ class TemplateAutomationApp(ctk.CTk):
         if not str(template_path):
             raise ValueError("Template Excel file is required.")
 
+        if not target_sheet_name:
+            raise ValueError("Target Sheet is required.")
+
         if not str(output_dir):
             raise ValueError("Output folder is required.")
 
@@ -468,6 +645,7 @@ class TemplateAutomationApp(ctk.CTk):
             output_dir=output_dir,
             user_name=user_name,
             show_browser=self.show_browser_var.get(),
+            target_sheet_name=target_sheet_name,
         )
 
     def _threadsafe_status(self, message: str) -> None:
@@ -578,6 +756,11 @@ class TemplateAutomationApp(ctk.CTk):
             self.output_dir_var.set(settings.get("output_dir", ""))
             self.show_browser_var.set(bool(settings.get("show_browser", True)))
 
+            target_sheet = str(settings.get("target_sheet") or self.TEMPLATE_SHEET_OPTIONS[0]).strip()
+            if not target_sheet:
+                target_sheet = self.TEMPLATE_SHEET_OPTIONS[0]
+            self.target_sheet_var.set(target_sheet)
+
         except Exception:
             pass
 
@@ -589,6 +772,7 @@ class TemplateAutomationApp(ctk.CTk):
                 "user_name": self.user_name_var.get().strip(),
                 "input_pdf": self.input_pdf_var.get().strip(),
                 "template_file": self.template_file_var.get().strip(),
+                "target_sheet": self.target_sheet_var.get().strip(),
                 "output_dir": self.output_dir_var.get().strip(),
                 "show_browser": self.show_browser_var.get(),
             }
