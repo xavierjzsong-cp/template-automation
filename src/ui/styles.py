@@ -10,17 +10,17 @@ class AppStyle:
     COLOR_SUCCESS = "#2E7D32"
     COLOR_ERROR = "#B42318"
 
-    FIELD_WIDTH = 620
-    TARGET_SHEET_WIDTH = 620
+    FIELD_WIDTH = 360                  # 普通输入框长度
+    TARGET_SHEET_WIDTH = 360           # Target Sheet 输入框和下拉框长度
 
-    FIELD_HEIGHT = 34
-    BROWSE_BUTTON_WIDTH = 90
-    BROWSE_BUTTON_HEIGHT = 28
-    PRIMARY_BUTTON_HEIGHT = 42
+    FIELD_HEIGHT = 34                  # 普通输入框、Target Sheet 输入框高度
+    BROWSE_BUTTON_WIDTH = 90           # Browse 按钮宽度
+    BROWSE_BUTTON_HEIGHT = 28          # Browse 按钮高度
+    PRIMARY_BUTTON_HEIGHT = 42         # Generate / Open Output Folder 按钮高度
 
-    TARGET_SHEET_DROPDOWN_HEIGHT = 160
-    TARGET_SHEET_OPTION_HEIGHT = 30
-    TARGET_SHEET_NO_MATCH_HEIGHT = 34
+    TARGET_SHEET_DROPDOWN_HEIGHT = 160 # Target Sheet 下拉框最大显示高度
+    TARGET_SHEET_OPTION_HEIGHT = 30    # 下拉选项每一行高度
+    TARGET_SHEET_NO_MATCH_HEIGHT = 34  # No predefined match. 行高度
 
-    PROGRESS_BAR_HEIGHT = 14
-    STATUS_MESSAGE_HEIGHT = 20
+    PROGRESS_BAR_HEIGHT = 14           # Progress bar 高度
+    STATUS_MESSAGE_HEIGHT = 20         # Progress 状态文字高度

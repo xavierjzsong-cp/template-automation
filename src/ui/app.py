@@ -106,7 +106,7 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
 
         self._add_label(main, "User Name", row=1)
         user_entry = self._create_entry(main, self.user_name_var)
-        user_entry.grid(row=1, column=1, columnspan=2, sticky="w", padx=(14, 24), pady=8)
+        user_entry.grid(row=1, column=1, sticky="w", padx=(14, 24), pady=8)
 
         self._add_label(main, "Input POTS File", row=2)
         input_entry = self._create_entry(main, self.input_pdf_var)
@@ -114,8 +114,8 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
         input_button = self._create_primary_button(
             main,
             text="Browse",
-            width=90,
-            height=28,
+            width=self.BROWSE_BUTTON_WIDTH,
+            height=self.BROWSE_BUTTON_HEIGHT,
             command=self._browse_input_pdf,
         )
         input_button.grid(row=2, column=2, sticky="e", padx=(0, 24), pady=8)
@@ -126,8 +126,8 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
         template_button = self._create_primary_button(
             main,
             text="Browse",
-            width=90,
-            height=28,
+            width=self.BROWSE_BUTTON_WIDTH,
+            height=self.BROWSE_BUTTON_HEIGHT,
             command=self._browse_template_file,
         )
         template_button.grid(row=3, column=2, sticky="e", padx=(0, 24), pady=8)
@@ -136,22 +136,24 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
 
         target_sheet_input_frame = ctk.CTkFrame(
             main,
+            width=self.TARGET_SHEET_WIDTH,
+            height=self.FIELD_HEIGHT,
             fg_color="transparent",
         )
         target_sheet_input_frame.grid(
             row=4,
             column=1,
-            columnspan=2,
-            sticky="ew",
+            sticky="w",
             padx=(14, 24),
             pady=8,
         )
+        target_sheet_input_frame.grid_propagate(False)
         target_sheet_input_frame.grid_columnconfigure(0, weight=1)
 
         self.target_sheet_entry = ctk.CTkEntry(
             target_sheet_input_frame,
             textvariable=self.target_sheet_var,
-            height=34,
+            height=self.FIELD_HEIGHT,
             border_color=self.COLOR_BORDER,
             fg_color="#FFFFFF",
             text_color=self.COLOR_TEXT,
@@ -175,7 +177,7 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
             target_sheet_input_frame,
             text="▼",
             width=42,
-            height=34,
+            height=self.FIELD_HEIGHT,
             fg_color=self.COLOR_PRIMARY,
             hover_color=self.COLOR_PRIMARY_HOVER,
             text_color="#FFFFFF",
@@ -185,6 +187,7 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
 
         self.target_sheet_dropdown = ctk.CTkFrame(
             main,
+            width=self.TARGET_SHEET_WIDTH,
             fg_color="#FFFFFF",
             corner_radius=8,
             border_width=1,
@@ -194,9 +197,10 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
 
         self.target_sheet_results_frame = ctk.CTkScrollableFrame(
             self.target_sheet_dropdown,
+            width=self.TARGET_SHEET_WIDTH - 20,
             fg_color="#FFFFFF",
             corner_radius=6,
-            height=160,
+            height=self.TARGET_SHEET_DROPDOWN_HEIGHT,
         )
         self.target_sheet_results_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
         self.target_sheet_results_frame.grid_columnconfigure(0, weight=1)
@@ -207,8 +211,8 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
         output_button = self._create_primary_button(
             main,
             text="Browse",
-            width=90,
-            height=28,
+            width=self.BROWSE_BUTTON_WIDTH,
+            height=self.BROWSE_BUTTON_HEIGHT,
             command=self._browse_output_dir,
         )
         output_button.grid(row=6, column=2, sticky="e", padx=(0, 24), pady=8)
@@ -235,7 +239,7 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
         self.generate_button = self._create_primary_button(
             button_frame,
             text="Generate Template",
-            height=42,
+            height=self.PRIMARY_BUTTON_HEIGHT,
             command=self._start_generation,
         )
         self.generate_button.grid(row=0, column=0, sticky="ew", padx=(0, 10))
@@ -243,7 +247,7 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
         self.open_output_button = ctk.CTkButton(
             button_frame,
             text="Open Output Folder",
-            height=42,
+            height=self.PRIMARY_BUTTON_HEIGHT,
             width=170,
             fg_color=self.COLOR_SECONDARY,
             hover_color="#D7EAF5",
@@ -284,7 +288,7 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
 
         self.progress_bar = ctk.CTkProgressBar(
             self.progress_card,
-            height=14,
+            height=self.PROGRESS_BAR_HEIGHT,
             progress_color=self.COLOR_PRIMARY,
             fg_color=self.COLOR_BORDER,
         )
@@ -298,7 +302,7 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
             text_color=self.COLOR_MUTED,
             anchor="w",
             justify="left",
-            height=20,
+            height=self.STATUS_MESSAGE_HEIGHT,
         )
         self.status_message_label.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
 
@@ -317,7 +321,7 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
             parent,
             textvariable=variable,
             width=self.FIELD_WIDTH,
-            height=34,
+            height=self.FIELD_HEIGHT,
             border_color=self.COLOR_BORDER,
             fg_color="#FFFFFF",
             text_color=self.COLOR_TEXT,
@@ -329,12 +333,12 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
         text: str,
         command,
         width: int | None = None,
-        height: int = 34,
+        height: int | None = None,
     ) -> ctk.CTkButton:
         button_kwargs = {
             "master": parent,
             "text": text,
-            "height": height,
+            "height": height if height is not None else self.FIELD_HEIGHT,
             "fg_color": self.COLOR_PRIMARY,
             "hover_color": self.COLOR_PRIMARY_HOVER,
             "text_color": "#FFFFFF",
@@ -393,8 +397,7 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
         self.target_sheet_dropdown.grid(
             row=5,
             column=1,
-            columnspan=2,
-            sticky="ew",
+            sticky="w",
             padx=(14, 24),
             pady=(0, 8),
         )
@@ -422,14 +425,20 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
         matches = self._get_target_sheet_matches(query=query, show_all=show_all)
 
         if matches:
-            target_height = min(180, max(40, len(matches) * 34 + 8))
+            target_height = min(
+                self.TARGET_SHEET_DROPDOWN_HEIGHT,
+                max(
+                    self.TARGET_SHEET_NO_MATCH_HEIGHT,
+                    len(matches) * (self.TARGET_SHEET_OPTION_HEIGHT + 4) + 8,
+                ),
+            )
             self.target_sheet_results_frame.configure(height=target_height)
 
             for row_index, sheet_name in enumerate(matches):
                 option_button = ctk.CTkButton(
                     self.target_sheet_results_frame,
                     text=sheet_name,
-                    height=30,
+                    height=self.TARGET_SHEET_OPTION_HEIGHT,
                     fg_color="transparent",
                     hover_color=self.COLOR_SECONDARY,
                     text_color=self.COLOR_TEXT,
@@ -442,11 +451,11 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
 
             return
 
-        self.target_sheet_results_frame.configure(height=44)
+        self.target_sheet_results_frame.configure(height=self.TARGET_SHEET_NO_MATCH_HEIGHT + 10)
         no_match_label = ctk.CTkLabel(
             self.target_sheet_results_frame,
             text="No predefined match.",
-            height=34,
+            height=self.TARGET_SHEET_NO_MATCH_HEIGHT,
             anchor="w",
             justify="left",
             text_color=self.COLOR_MUTED,
