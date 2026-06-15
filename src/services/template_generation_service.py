@@ -21,6 +21,7 @@ from src.adapters.ht_adapter import HtAdapter
 
 from src.writers.template_writer import TemplateWriter
 from src.utils.app_paths import (
+    configure_playwright_browsers,
     logs_dir as user_logs_dir,
     resource_path,
     source_project_root,
@@ -70,6 +71,8 @@ class TemplateGenerationService:
         project_root: Path | None = None,
         partners_config_path: Path | None = None,
     ) -> None:
+        configure_playwright_browsers()
+
         self.project_root = project_root or source_project_root()
         self.partners_config_path = (
             partners_config_path

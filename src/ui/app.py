@@ -14,7 +14,7 @@ from src.services.template_generation_service import (
 )
 
 from src.ui.styles import AppStyle
-from src.utils.app_paths import settings_path
+from src.utils.app_paths import configure_playwright_browsers, settings_path
 
 
 class TemplateAutomationApp(AppStyle, ctk.CTk):
@@ -27,6 +27,8 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
     ]
 
     def __init__(self) -> None:
+        configure_playwright_browsers()
+
         super().__init__()
 
         self.title("Template Automation Tool")

@@ -24,6 +24,12 @@ def resource_path(*parts: str) -> Path:
     return bundle_root().joinpath(*parts)
 
 
+def configure_playwright_browsers() -> None:
+    bundled_browsers = resource_path("ms-playwright")
+    if bundled_browsers.exists():
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(bundled_browsers)
+
+
 def user_data_dir() -> Path:
     local_appdata = os.environ.get("LOCALAPPDATA")
     if local_appdata:
