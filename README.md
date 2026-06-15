@@ -156,7 +156,6 @@ Commit:
 src/
 config/partners.yaml
 config/field_mapping.yaml
-templates/ if the repository should provide a reference template
 requirements.txt
 TemplateAutomationTool.spec
 packaging/
@@ -172,7 +171,11 @@ build/
 dist/
 logs/
 output_docs/
+output_doc/
 input_docs/
+input_doc/
+templates/
+template/
 config/ui_settings.json
 ```
 

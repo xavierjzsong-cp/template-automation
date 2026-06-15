@@ -20,6 +20,7 @@ Thumbs.db
 # Logs / outputs
 logs/
 output_docs/
+output_doc/
 build/
 dist/
 
@@ -32,3 +33,6 @@ config/ui_settings.json
 
 # Test / temp docs
 input_docs/
+input_doc/
+templates/
+template/

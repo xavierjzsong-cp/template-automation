@@ -156,7 +156,6 @@ Compress-Archive -LiteralPath dist\TemplateAutomationTool -DestinationPath dist\
 src/
 config/partners.yaml
 config/field_mapping.yaml
-templates/ 如果需要在仓库中提供参考模板
 requirements.txt
 TemplateAutomationTool.spec
 packaging/
@@ -172,7 +171,11 @@ build/
 dist/
 logs/
 output_docs/
+output_doc/
 input_docs/
+input_doc/
+templates/
+template/
 config/ui_settings.json
 ```
 
