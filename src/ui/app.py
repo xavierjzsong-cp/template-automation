@@ -631,25 +631,29 @@ class TemplateAutomationApp(AppStyle, ctk.CTk):
 
     def _build_generation_request(self) -> GenerationRequest:
         user_name = self.user_name_var.get().strip()
-        input_path = Path(self.input_pdf_var.get().strip())
-        template_path = Path(self.template_file_var.get().strip())
-        output_dir = Path(self.output_dir_var.get().strip())
+        input_path_text = self.input_pdf_var.get().strip()
+        template_path_text = self.template_file_var.get().strip()
+        output_dir_text = self.output_dir_var.get().strip()
         target_sheet_name = self.target_sheet_var.get().strip()
 
         if not user_name:
             raise ValueError("User Name is required.")
 
-        if not str(input_path):
+        if not input_path_text:
             raise ValueError("Input POTS PDF is required.")
 
-        if not str(template_path):
+        if not template_path_text:
             raise ValueError("Template Excel file is required.")
 
         if not target_sheet_name:
             raise ValueError("Target Sheet is required.")
 
-        if not str(output_dir):
+        if not output_dir_text:
             raise ValueError("Output folder is required.")
+
+        input_path = Path(input_path_text)
+        template_path = Path(template_path_text)
+        output_dir = Path(output_dir_text)
 
         return GenerationRequest(
             input_path=input_path,

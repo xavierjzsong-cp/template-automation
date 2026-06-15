@@ -24,13 +24,7 @@ Do not copy only the exe. The whole extracted folder must stay together because 
 
 ## What Is a GitHub Release?
 
-A GitHub Release is a versioned download page for packaged deliverables. It is the right place to upload files such as:
-
-```text
-TemplateAutomationTool.zip
-```
-
-The Git repository should store source code and packaging configuration. It should not store large packaged exe zip files. After each version update, maintainers should:
+A GitHub Release is a versioned download page for packaged deliverables. The Git repository should store source code and packaging configuration. It should not store large packaged exe zip files. After each version update, maintainers should:
 
 1. Build from the latest `main` branch.
 2. Generate `dist/TemplateAutomationTool.zip`.
@@ -69,7 +63,7 @@ config/partners.yaml
     Partner URL and capability configuration. Bundled with the exe.
 
 templates/
-    Default Excel template.
+    Optional reference template folder. The app does not load files from here automatically; users must select the Template Excel File in the UI.
 
 TemplateAutomationTool.spec
     PyInstaller onedir packaging configuration.
@@ -162,7 +156,7 @@ Commit:
 src/
 config/partners.yaml
 config/field_mapping.yaml
-templates/
+templates/ if the repository should provide a reference template
 requirements.txt
 TemplateAutomationTool.spec
 packaging/
@@ -183,6 +177,8 @@ config/ui_settings.json
 ```
 
 These paths are ignored in `.gitignore`.
+
+The production app does not use default paths for the Input POTS PDF, Template Excel File, or Output Folder. All three must be selected or entered by the user in the UI.
 
 ## Suggested Release Flow
 

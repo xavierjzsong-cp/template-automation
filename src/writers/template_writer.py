@@ -21,7 +21,7 @@ class TemplateWriter:
         top_adapter: dict[str, Any] | None,
         bottom_adapter: dict[str, Any] | None,
         template_path: str | Path,
-        output_dir: str | Path = "output_docs",
+        output_dir: str | Path,
         user_name: str | None = None,
         coating_data: dict[str, Any] | None = None,
         target_sheet_name: str | None = None,

@@ -24,13 +24,7 @@ English version: [README.md](README.md)
 
 ## GitHub Release 是什么
 
-GitHub Release 是 GitHub 提供的“版本发布页面”。它适合放给普通用户下载的成品，例如：
-
-```text
-TemplateAutomationTool.zip
-```
-
-Git 仓库本身适合保存源码和打包配置，不适合直接提交几百 MB 的 exe zip。每次版本更新后，维护人员应：
+GitHub Release 是 GitHub 提供的“版本发布页面”。每次版本更新后，维护人员应：
 
 1. 从最新 `main` 分支打包。
 2. 生成 `dist/TemplateAutomationTool.zip`。
@@ -69,7 +63,7 @@ config/partners.yaml
     partner URL 和能力配置，打包时随 exe 一起发布。
 
 templates/
-    默认 Excel template。
+    可选参考模板文件夹。程序不会自动读取这里的文件；正式运行时必须由用户在 UI 中选择 Template Excel File。
 
 TemplateAutomationTool.spec
     PyInstaller onedir 打包配置。
@@ -162,7 +156,7 @@ Compress-Archive -LiteralPath dist\TemplateAutomationTool -DestinationPath dist\
 src/
 config/partners.yaml
 config/field_mapping.yaml
-templates/
+templates/ 如果需要在仓库中提供参考模板
 requirements.txt
 TemplateAutomationTool.spec
 packaging/
@@ -183,6 +177,8 @@ config/ui_settings.json
 ```
 
 这些已在 `.gitignore` 中排除。
+
+正式程序不会为 Input POTS PDF、Template Excel File 或 Output Folder 使用默认路径。三者都必须由用户在 UI 中选择或填写。
 
 ## 发布流程建议
 
