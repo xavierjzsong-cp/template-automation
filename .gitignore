@@ -7,6 +7,7 @@ __pycache__/
 .venv/
 venv/
 env/
+py314/
 
 # IDE
 .vscode/
@@ -19,12 +20,15 @@ Thumbs.db
 # Logs / outputs
 logs/
 output_docs/
+build/
+dist/
 
 # Excel temp
 ~$*.xlsx
 
 # Local config secrets
 .env
+config/ui_settings.json
 
 # Test / temp docs
 input_docs/

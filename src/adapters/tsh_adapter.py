@@ -40,7 +40,7 @@ class TshAdapter(BaseAdapter):
 
         ensure_dir(self.logs_dir)
 
-        self.logger = setup_logger(self.logs_dir, "tsh_adapter_v1.8")
+        self.logger = setup_logger(self.logs_dir, "tsh_adapter_v2.6")
 
         self.playwright = sync_playwright().start()
         self.browser: Browser = self.playwright.chromium.launch(

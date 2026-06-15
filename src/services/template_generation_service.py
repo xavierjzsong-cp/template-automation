@@ -20,6 +20,11 @@ from src.adapters.jfe_adapter import JfeAdapter
 from src.adapters.ht_adapter import HtAdapter
 
 from src.writers.template_writer import TemplateWriter
+from src.utils.app_paths import (
+    logs_dir as user_logs_dir,
+    resource_path,
+    source_project_root,
+)
 
 
 StatusCallback = Callable[[str], None]
@@ -65,11 +70,12 @@ class TemplateGenerationService:
         project_root: Path | None = None,
         partners_config_path: Path | None = None,
     ) -> None:
-        self.project_root = project_root or Path(__file__).resolve().parents[2]
+        self.project_root = project_root or source_project_root()
         self.partners_config_path = (
             partners_config_path
-            or self.project_root / "config" / "partners.yaml"
+            or resource_path("config", "partners.yaml")
         )
+        self.logs_dir = user_logs_dir()
 
     def generate(
         self,
@@ -197,7 +203,7 @@ class TemplateGenerationService:
             adapter = VamAdapter(
                 base_url=base_url,
                 configurator_url=configurator_url,
-                logs_dir=self.project_root / "logs",
+                logs_dir=self.logs_dir,
                 headless=headless,
                 slow_mo=300,
                 timeout_ms=10000,
@@ -216,7 +222,7 @@ class TemplateGenerationService:
                 base_url=base_url,
                 datasheet_url=datasheet_url,
                 blanking_url=blanking_url,
-                logs_dir=self.project_root / "logs",
+                logs_dir=self.logs_dir,
                 headless=headless,
                 slow_mo=300,
                 timeout_ms=10000,
@@ -236,7 +242,7 @@ class TemplateGenerationService:
                 base_url=base_url,
                 datasheet_url=datasheet_url,
                 blanking_url=blanking_url,
-                logs_dir=self.project_root / "logs",
+                logs_dir=self.logs_dir,
                 headless=headless,
                 slow_mo=300,
                 timeout_ms=10000,
@@ -251,7 +257,7 @@ class TemplateGenerationService:
             adapter = HtAdapter(
                 base_url=base_url,
                 datasheet_url=datasheet_url,
-                logs_dir=self.project_root / "logs",
+                logs_dir=self.logs_dir,
                 headless=headless,
                 slow_mo=300,
                 timeout_ms=10000,

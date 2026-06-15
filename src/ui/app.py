@@ -14,11 +14,12 @@ from src.services.template_generation_service import (
 )
 
 from src.ui.styles import AppStyle
+from src.utils.app_paths import settings_path
 
 
 class TemplateAutomationApp(AppStyle, ctk.CTk):
 
-    SETTINGS_PATH = Path("config") / "ui_settings.json"
+    SETTINGS_PATH = settings_path()
 
     TEMPLATE_SHEET_OPTIONS = [
         f"CP_ACCESSORY-{index:02d}"
