@@ -62,9 +62,6 @@ src/writers/template_writer.py
 config/partners.yaml
     Partner URL and capability configuration. Bundled with the exe.
 
-templates/
-    Optional reference template folder. The app does not load files from here automatically; users must select the Template Excel File in the UI.
-
 TemplateAutomationTool.spec
     PyInstaller onedir packaging configuration.
 
@@ -162,26 +159,6 @@ packaging/
 README.md
 README-CN.md
 ```
-
-Do not commit:
-
-```text
-py314/
-build/
-dist/
-logs/
-output_docs/
-output_doc/
-input_docs/
-input_doc/
-templates/
-template/
-config/ui_settings.json
-```
-
-These paths are ignored in `.gitignore`.
-
-The production app does not use default paths for the Input POTS PDF, Template Excel File, or Output Folder. All three must be selected or entered by the user in the UI.
 
 ## Suggested Release Flow
 

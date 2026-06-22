@@ -62,9 +62,6 @@ src/writers/template_writer.py
 config/partners.yaml
     partner URL 和能力配置，打包时随 exe 一起发布。
 
-templates/
-    可选参考模板文件夹。程序不会自动读取这里的文件；正式运行时必须由用户在 UI 中选择 Template Excel File。
-
 TemplateAutomationTool.spec
     PyInstaller onedir 打包配置。
 
@@ -162,26 +159,6 @@ packaging/
 README.md
 README-CN.md
 ```
-
-不应提交：
-
-```text
-py314/
-build/
-dist/
-logs/
-output_docs/
-output_doc/
-input_docs/
-input_doc/
-templates/
-template/
-config/ui_settings.json
-```
-
-这些已在 `.gitignore` 中排除。
-
-正式程序不会为 Input POTS PDF、Template Excel File 或 Output Folder 使用默认路径。三者都必须由用户在 UI 中选择或填写。
 
 ## 发布流程建议
 
