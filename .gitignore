@@ -36,3 +36,6 @@ input_docs/
 input_doc/
 templates/
 template/
+
+# Local development scratch script
+test.py

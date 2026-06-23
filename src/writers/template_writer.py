@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -9,11 +10,17 @@ from typing import Any
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
 
+from src.utils import setup_logger
+from src.utils.app_paths import logs_dir
+
 
 class TemplateWriter:
 
     DEFAULT_ANGLE = 30
     NA = "NA"
+
+    def __init__(self, logger: logging.Logger | None = None) -> None:
+        self.logger = logger or setup_logger(logs_dir(), "template_writer_v2.6")
 
     def write(
         self,
@@ -34,8 +41,12 @@ class TemplateWriter:
             coating_data=coating_data,
         )
 
-        print("\n=== Formatted Data ===")
-        print(formatted)
+        self.logger.info(
+            "Writing template. template_path=%s, output_dir=%s, target_sheet=%s",
+            template_path,
+            output_dir,
+            target_sheet_name,
+        )
 
         output_file = self._write_to_template(
             template_path=template_path,
@@ -44,7 +55,7 @@ class TemplateWriter:
             target_sheet_name=target_sheet_name,
         )
 
-        print(f"\nSaved output file: {output_file}")
+        self.logger.info("Saved output file: %s", output_file)
 
         return {
             "parsed": parsed,

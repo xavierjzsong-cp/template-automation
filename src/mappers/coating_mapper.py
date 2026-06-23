@@ -95,18 +95,27 @@ class CoatingMapper:
         self,
         router_output: dict[str, Any],
     ) -> tuple[str | None, str | None]:
-        partners_involved = router_output.get("partners_involved")
+        targets = router_output.get("targets") or []
 
-        if isinstance(partners_involved, list):
-            top_partner = partners_involved[0] if len(partners_involved) >= 1 else None
-            bottom_partner = partners_involved[1] if len(partners_involved) >= 2 else None
+        top_partner = None
+        bottom_partner = None
 
-            return (
-                str(top_partner) if top_partner else None,
-                str(bottom_partner) if bottom_partner else None,
-            )
+        for target in targets:
+            if not isinstance(target, dict):
+                continue
 
-        return None, None
+            side = str(target.get("side") or "").strip().lower()
+            partner = target.get("partner")
+
+            if not partner:
+                continue
+
+            if side == "upper":
+                top_partner = str(partner)
+            elif side == "lower":
+                bottom_partner = str(partner)
+
+        return top_partner, bottom_partner
 
     def _normalize_material_compact(self, material: str | None) -> str:
         if not material:
