@@ -121,6 +121,23 @@ Or:
 
 The current packaging strategy uses PyInstaller `onedir`. Do not start with `onefile`; Playwright + Chromium is more stable and easier to debug in onedir.
 
+Recommended one-command local build:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build_exe.ps1
+```
+
+Useful options:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build_exe.ps1 -SkipInstall
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build_exe.ps1 -SkipInstall -SkipSmokeTest
+```
+
+The script installs/checks dependencies, validates the project, builds with PyInstaller, checks bundled files, runs a non-source startup smoke test, and creates `dist/TemplateAutomationTool.zip`.
+
+Manual build command:
+
 Build command:
 
 ```powershell
@@ -141,9 +158,25 @@ Compress-Archive -LiteralPath dist\TemplateAutomationTool -DestinationPath dist\
 
 ## What Is build_exe.ps1?
 
-`build_exe.ps1` would be a future one-click packaging script. It is not business logic. It would simply collect the packaging commands in one PowerShell script, such as installing Playwright Chromium, running PyInstaller, and creating the final zip.
+`build_exe.ps1` is the local one-click packaging script. It is not business logic. It collects the packaging commands in one PowerShell script, such as installing Playwright Chromium, running PyInstaller, checking the bundled files, running a startup smoke test, and creating the final zip.
 
-This script has not been created yet. For now, use the manual commands above.
+Use this script for normal local packaging. The manual commands above are kept for troubleshooting.
+
+## CI/CD
+
+This repository includes GitHub Actions workflows:
+
+```text
+.github/workflows/ci.yml
+    CI checks for push, pull request, and manual runs.
+
+.github/workflows/release.yml
+    Manual CD workflow that builds the exe zip and uploads it to a GitHub Release.
+```
+
+The CI workflow checks Python compilation, core imports, Playwright installation, and YAML configuration. It does not publish a release.
+
+The Release workflow is manually triggered from GitHub Actions. Enter a version such as `v1.0.1`; it builds `dist/TemplateAutomationTool.zip` and uploads that zip as the release asset.
 
 ## Git Rules
 
@@ -156,6 +189,8 @@ config/field_mapping.yaml
 requirements.txt
 TemplateAutomationTool.spec
 packaging/
+build_exe.ps1
+.github/workflows/
 README.md
 README-CN.md
 ```
@@ -164,8 +199,6 @@ README-CN.md
 
 1. Make sure `main` is up to date.
 2. Run smoke tests or at least verify parser/router/service behavior.
-3. Build with PyInstaller.
-4. Copy `dist/TemplateAutomationTool/` to a non-source folder and start the exe.
-5. Zip `dist/TemplateAutomationTool`.
-6. Upload the zip to a GitHub Release.
+3. Run `.\build_exe.ps1` locally, or run the manual GitHub Actions Release workflow.
+4. Upload or confirm the generated `TemplateAutomationTool.zip` in GitHub Release.
 7. Ask internal users to download the latest release.

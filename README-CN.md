@@ -121,6 +121,23 @@ python run_ui.py
 
 当前使用 PyInstaller `--onedir` 方案。不要优先使用 `--onefile`，因为 Playwright + Chromium 在 onedir 下更稳定，也更方便排查路径问题。
 
+推荐使用本地一键打包脚本：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build_exe.ps1
+```
+
+常用选项：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build_exe.ps1 -SkipInstall
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build_exe.ps1 -SkipInstall -SkipSmokeTest
+```
+
+该脚本会安装/检查依赖、验证项目、运行 PyInstaller、检查打包文件、从非源码目录启动 exe 做 smoke test，并生成 `dist/TemplateAutomationTool.zip`。
+
+手动打包命令：
+
 打包命令：
 
 ```powershell
@@ -141,9 +158,25 @@ Compress-Archive -LiteralPath dist\TemplateAutomationTool -DestinationPath dist\
 
 ## build_exe.ps1 是什么
 
-`build_exe.ps1` 是后续可以新增的一键打包脚本。它不是业务代码，而是把安装浏览器、运行 PyInstaller、压缩 zip 等命令集中到一个 PowerShell 脚本里，减少每次手动打包出错的概率。
+`build_exe.ps1` 是本地一键打包脚本。它不是业务代码，而是把安装浏览器、运行 PyInstaller、检查打包文件、启动 smoke test、压缩 zip 等命令集中到一个 PowerShell 脚本里，减少每次手动打包出错的概率。
 
-目前尚未创建该脚本。当前仍使用上面的手动命令打包。
+正常本地打包建议使用该脚本。上面的手动命令主要用于排查问题。
+
+## CI/CD
+
+仓库中包含 GitHub Actions workflows：
+
+```text
+.github/workflows/ci.yml
+    CI 检查，用于 push、pull request 和手动运行。
+
+.github/workflows/release.yml
+    手动触发的 CD 流程，用于打包 exe zip 并上传到 GitHub Release。
+```
+
+CI workflow 会检查 Python 编译、核心模块 import、Playwright 安装和 YAML 配置。它不会发布 Release。
+
+Release workflow 需要在 GitHub Actions 页面手动触发。输入版本号，例如 `v1.0.1`，它会构建 `dist/TemplateAutomationTool.zip` 并上传为 GitHub Release asset。
 
 ## Git 提交规则
 
@@ -156,6 +189,8 @@ config/field_mapping.yaml
 requirements.txt
 TemplateAutomationTool.spec
 packaging/
+build_exe.ps1
+.github/workflows/
 README.md
 README-CN.md
 ```
@@ -164,8 +199,6 @@ README-CN.md
 
 1. 确认 `main` 分支代码最新。
 2. 运行 smoke test 或至少确认 parser/router/service 可用。
-3. 运行 PyInstaller 打包。
-4. 从非源码目录复制并启动 `dist/TemplateAutomationTool/TemplateAutomationTool.exe` 做启动测试。
-5. 压缩 `dist/TemplateAutomationTool` 为 zip。
-6. 在 GitHub Release 上传 zip。
+3. 本地运行 `.\build_exe.ps1`，或在 GitHub Actions 手动运行 Release workflow。
+4. 上传或确认 GitHub Release 中的 `TemplateAutomationTool.zip`。
 7. 通知内部用户下载最新版 Release。

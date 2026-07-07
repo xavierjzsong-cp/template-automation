@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    name: Python checks
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        shell: pwsh
+        run: python -m playwright install chromium
+
+      - name: Compile Python files
+        shell: pwsh
+        run: python -m compileall -q run_ui.py src
+
+      - name: Import core modules
+        shell: pwsh
+        run: |
+          python -c "from src.ui.app import TemplateAutomationApp; from src.services.template_generation_service import TemplateGenerationService; from src.adapters.ht_adapter import HtAdapter; print('core imports ok')"
+
+      - name: Validate YAML config
+        shell: pwsh
+        run: |
+          python -c "import yaml; from pathlib import Path; data=yaml.safe_load(Path('config/partners.yaml').read_text(encoding='utf-8')); assert data['partners']['HT']['urls']['homepage'] == 'https://datasheet.hunting-intl.com'; print('config ok')"
