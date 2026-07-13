@@ -23,6 +23,8 @@ English version: [README.md](README.md)
 
 注意：不要在 zip 压缩包预览窗口里直接双击运行 `TemplateAutomationTool.exe`。Windows 可能会提示“这个应用程序可能要靠这个文件夹中其他压缩文件才能运行”，这是正常现象，因为程序依赖同一文件夹中的 `_internal` 目录、Python runtime、配置文件和 Playwright Chromium。
 
+首次运行时，Windows Defender SmartScreen 可能会显示“Windows protected your PC”或类似保护提示，因为当前内部工具尚未进行代码签名。用户确认文件来自官方内部发布版本后，可以点击 **More info**，再选择 **Run anyway**。
+
 不要只复制 exe。必须保留整个解压后的文件夹。
 
 ## GitHub Release 是什么

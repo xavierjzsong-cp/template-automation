@@ -23,6 +23,8 @@ End users do not need Python or the source code.
 
 Do not run `TemplateAutomationTool.exe` directly from inside the zip preview window. Windows may show a warning that the application needs other compressed files in the folder. This is expected because the app depends on the bundled `_internal` folder, configuration files, Python runtime, and Playwright Chromium.
 
+On first run, Windows Defender SmartScreen may show a "Windows protected your PC" warning because this internal tool is not code-signed yet. After confirming the file comes from the official internal release, click **More info** and then **Run anyway**.
+
 Do not copy only the exe. The whole extracted folder must stay together.
 
 ## What Is a GitHub Release?
