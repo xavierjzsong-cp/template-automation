@@ -17,10 +17,13 @@ English version: [README.md](README.md)
 2. 进入右侧或顶部的 **Releases** 页面。
 3. 找到最新版本。
 4. 下载 `TemplateAutomationTool.zip`。
-5. 解压整个 zip。
-6. 双击 `TemplateAutomationTool.exe`。
+5. 右键 zip 文件，选择 **全部解压缩**。
+6. 打开解压后的 `TemplateAutomationTool` 文件夹。
+7. 双击 `TemplateAutomationTool.exe`。
 
-注意：不要只复制 exe。必须保留整个解压后的文件夹，因为 exe 依赖 `_internal` 目录中的 Python runtime、配置文件和 Playwright Chromium。
+注意：不要在 zip 压缩包预览窗口里直接双击运行 `TemplateAutomationTool.exe`。Windows 可能会提示“这个应用程序可能要靠这个文件夹中其他压缩文件才能运行”，这是正常现象，因为程序依赖同一文件夹中的 `_internal` 目录、Python runtime、配置文件和 Playwright Chromium。
+
+不要只复制 exe。必须保留整个解压后的文件夹。
 
 ## GitHub Release 是什么
 

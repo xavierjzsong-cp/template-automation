@@ -17,10 +17,13 @@ End users do not need Python or the source code.
 2. Go to **Releases**.
 3. Find the latest release.
 4. Download `TemplateAutomationTool.zip`.
-5. Extract the full zip file.
-6. Double-click `TemplateAutomationTool.exe`.
+5. Right-click the zip file and choose **Extract All**.
+6. Open the extracted `TemplateAutomationTool` folder.
+7. Double-click `TemplateAutomationTool.exe`.
 
-Do not copy only the exe. The whole extracted folder must stay together because the exe depends on the bundled `_internal` folder, configuration files, Python runtime, and Playwright Chromium.
+Do not run `TemplateAutomationTool.exe` directly from inside the zip preview window. Windows may show a warning that the application needs other compressed files in the folder. This is expected because the app depends on the bundled `_internal` folder, configuration files, Python runtime, and Playwright Chromium.
+
+Do not copy only the exe. The whole extracted folder must stay together.
 
 ## What Is a GitHub Release?
 
